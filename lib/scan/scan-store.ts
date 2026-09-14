@@ -17,6 +17,10 @@ export interface ScanEntry {
   shaToResultIndex: Map<string, number>;
   /** Current SHA-256 whose reverse-search result is reusable. */
   pendingSha?: string;
+  /** Dedup: image URLs already enqueued (counted once, ever). */
+  seenImageUrls: Set<string>;
+  /** In-flight SHA-256 claims → row index, so concurrent identical bytes merge into one row. */
+  pendingShas: Map<string, Promise<number>>;
   /** Cancellation flag checked between work items. */
   stopRequested: boolean;
   /** Resolve function of the engine's completion promise. */
@@ -47,6 +51,8 @@ export function createScanEntry(scanId: string, targetUrl: string): ScanEntry {
     results: [],
     urlToResultIndex: new Map(),
     shaToResultIndex: new Map(),
+    seenImageUrls: new Set(),
+    pendingShas: new Map(),
     stopRequested: false,
     subscribers: new Set(),
   };

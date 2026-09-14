@@ -74,7 +74,7 @@ export async function crawlSite(options: CrawlerOptions): Promise<CrawlSummary> 
     const normalized = normalizeUrlForComparison(resolved.url);
     if (visited.has(normalized)) return;
     // Reject obvious non-HTML resources as crawl targets
-    if (/\.(jpg|jpeg|png|gif|webp|svg|ico|pdf|zip|css|js|mp4|webm|woff2?|ttf|eot)(\?|$)/i.test(normalized)) {
+    if (/\.(jpg|jpeg|png|gif|webp|avif|svg|ico|pdf|zip|css|js|mp4|webm|woff2?|ttf|eot)(\?|$)/i.test(normalized)) {
       return;
     }
     visited.add(normalized);

@@ -73,11 +73,11 @@ export default function ImageDetail({ result }: { result: ImageScanResult }) {
         {result.occurrences.length > 1 ? (
           <div>
             <dt className="font-medium text-neutral-500">
-              Also found on ({result.occurrences.length - 1} more page
-              {result.occurrences.length > 2 ? "s" : ""})
+              Found on {result.occurrences.length} page
+              {result.occurrences.length === 1 ? "" : "s"}
             </dt>
             <dd className="mt-1 space-y-1">
-              {result.occurrences.slice(1).map((occurrence) => (
+              {result.occurrences.map((occurrence) => (
                 <p key={`${occurrence.pageUrl}-${occurrence.imageUrl}`} className="break-all text-neutral-700">
                   {occurrence.pageUrl}
                 </p>

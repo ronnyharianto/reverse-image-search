@@ -5,10 +5,10 @@ import { MAX_IMAGE_BYTES } from "@/types/scanner";
  * Image validation and metadata via Sharp.
  * Only common raster formats accepted; SVG is rejected deliberately
  * (SVG can embed scripts and is rarely a photographic work).
+ * AVIF is included — it is widely used on modern websites.
  */
 
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-const ALLOWED_SHARP_FORMATS = new Set(["jpeg", "png", "webp", "gif"]);
+const ALLOWED_SHARP_FORMATS = new Set(["jpeg", "png", "webp", "gif", "avif"]);
 
 export type MetadataResult =
   | { ok: true; metadata: Metadata; width: number; height: number; mimeType: string; format: string }
@@ -19,9 +19,12 @@ export async function inspectImage(data: Buffer, contentType: string): Promise<M
   if (data.length > MAX_IMAGE_BYTES) return { ok: false, error: "Image exceeds the maximum allowed size." };
 
   // Sniff magic bytes instead of trusting the declared content type
-  const format = detectFormat(data);
+  const format = isSupportedImageBytes(data);
   if (!format) {
-    return { ok: false, error: "Unsupported image format (only JPEG, PNG, WebP and GIF are supported)." };
+    return {
+      ok: false,
+      error: "Unsupported image format (only JPEG, PNG, WebP, GIF and AVIF are supported).",
+    };
   }
 
   if (contentType && !contentType.startsWith("image/")) {
@@ -34,16 +37,25 @@ export async function inspectImage(data: Buffer, contentType: string): Promise<M
     if (!metadata.width || !metadata.height) {
       return { ok: false, error: "Image has no readable dimensions." };
     }
-    if (!ALLOWED_SHARP_FORMATS.has(metadata.format ?? "")) {
-      return { ok: false, error: `Unsupported image format: ${metadata.format}` };
+
+    // Cast: some @types/sharp versions omit "avif" from FormatEnum although
+    // the runtime reports it.
+    const sharpFormat = (metadata.format ?? "") as string;
+    // Some Sharp builds report AVIF as heif container with AV1 compression
+    const isAvif =
+      sharpFormat === "avif" || (sharpFormat === "heif" && metadata.compression === "av1");
+    const isAllowed = ALLOWED_SHARP_FORMATS.has(sharpFormat) || (isAvif && format === "avif");
+    if (!isAllowed) {
+      return { ok: false, error: `Unsupported image format: ${sharpFormat || "unknown"}` };
     }
+
     return {
       ok: true,
       metadata,
       width: metadata.width,
       height: metadata.height,
-      mimeType: metadata.format === "jpeg" ? "image/jpeg" : `image/${metadata.format}`,
-      format: metadata.format,
+      mimeType: sharpFormat === "jpeg" ? "image/jpeg" : isAvif ? "image/avif" : `image/${format}`,
+      format,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -51,7 +63,8 @@ export async function inspectImage(data: Buffer, contentType: string): Promise<M
   }
 }
 
-function detectFormat(data: Buffer): string | null {
+/** Sniff magic bytes; null when the bytes are not a supported raster image. */
+export function isSupportedImageBytes(data: Buffer): string | null {
   if (data.length < 12) return null;
   // JPEG: FF D8 FF
   if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "jpeg";
@@ -63,7 +76,12 @@ function detectFormat(data: Buffer): string | null {
   if (data.subarray(0, 4).toString("ascii") === "RIFF" && data.subarray(8, 12).toString("ascii") === "WEBP") {
     return "webp";
   }
+  // AVIF: ISO-BMFF container — bytes 4..8 = "ftyp", brand at 8..12
+  if (
+    data.subarray(4, 8).toString("ascii") === "ftyp" &&
+    ["avif", "avis", "mif1"].includes(data.subarray(8, 12).toString("ascii"))
+  ) {
+    return "avif";
+  }
   return null;
 }
-
-export { ALLOWED_MIME_TYPES };

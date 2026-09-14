@@ -91,8 +91,14 @@ async function runScan(entry: ScanEntry, providers: ReturnType<typeof getProvide
       onPageScanned: (pageUrl, imageUrls) => {
         if (isStopRequested(entry)) return;
         entry.progress.pagesScanned += 1;
-        entry.progress.imagesFound += imageUrls.length;
+        // Count each image URL once per scan — same URL on many pages is ONE image.
+        // Repeats are still enqueued so the row records every page occurrence.
         for (const imageUrl of imageUrls) {
+          const isNew = !entry.seenImageUrls.has(imageUrl);
+          if (isNew) {
+            entry.seenImageUrls.add(imageUrl);
+            entry.progress.imagesFound += 1;
+          }
           queue.push({ task: { pageUrl, imageUrl } });
         }
         publishEvent(entry, { type: "progress", progress: { ...entry.progress } });

@@ -26,7 +26,7 @@ describe("scan store", () => {
     expect(entry.progress.pagesScanned).toBe(0);
   });
 
-  it("dedups identical images via the sha index, keeping occurrences", () => {
+  it("dedups identical bytes via the sha index, merging occurrences", () => {
     const entry = createScanEntry("scan-2", "https://example.com");
     const first = makeResult("a".repeat(64), "https://example.com/");
     const duplicate = makeResult("a".repeat(64), "https://example.com/about");
@@ -41,10 +41,31 @@ describe("scan store", () => {
       imageUrl: duplicate.imageUrl,
     });
 
-    // One result row, two occurrences (original + duplicate page)
+    // One result row, two page occurrences (original + duplicate page)
     expect(entry.results).toHaveLength(1);
     expect(entry.results[0].occurrences).toHaveLength(2);
     expect(entry.results[0].occurrences[1].pageUrl).toBe("https://example.com/about");
+  });
+
+  it("maps every image URL of an image to the same row", () => {
+    const entry = createScanEntry("scan-2b", "https://example.com");
+    entry.results.push(makeResult("c".repeat(64), "https://example.com/"));
+    entry.urlToResultIndex.set("https://example.com/img/hero.jpg", 0);
+    entry.urlToResultIndex.set("https://cdn.example.com/img/hero.jpg", 0);
+    expect(entry.urlToResultIndex.get("https://example.com/img/hero.jpg")).toBe(0);
+    expect(entry.urlToResultIndex.get("https://cdn.example.com/img/hero.jpg")).toBe(0);
+  });
+
+  it("tracks pending SHAs so concurrent identical bytes merge", async () => {
+    const entry = createScanEntry("scan-2c", "https://example.com");
+    let release!: (index: number) => void;
+    const claim = new Promise<number>((resolve) => {
+      release = resolve;
+    });
+    entry.pendingShas.set("d".repeat(64), claim);
+    expect(entry.pendingShas.has("d".repeat(64))).toBe(true);
+    release(3);
+    await expect(claim).resolves.toBe(3);
   });
 
   it("prunes finished scans but never running ones", () => {

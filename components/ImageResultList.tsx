@@ -4,6 +4,58 @@ import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import type { ImageScanResult } from "@/types/scanner";
 
+function truncateUrl(url: string, max = 60): string {
+  return url.length > max ? `${url.slice(0, max - 1)}…` : url;
+}
+
+function UrlList({ items, emptyText }: { items: string[]; emptyText: string }) {
+  if (items.length === 0) {
+    return <span className="text-neutral-400">{emptyText}</span>;
+  }
+  if (items.length <= 2) {
+    return (
+      <div className="space-y-0.5">
+        {items.map((url) => (
+          <p key={url} className="break-all text-neutral-700" title={url}>
+            {truncateUrl(url, 70)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return <ExpandableUrlList items={items} />;
+}
+
+function ExpandableUrlList({ items }: { items: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="space-y-0.5">
+      {items.slice(0, 2).map((url) => (
+        <p key={url} className="break-all text-neutral-700" title={url}>
+          {truncateUrl(url, 70)}
+        </p>
+      ))}
+      {expanded
+        ? items.slice(2).map((url) => (
+            <p key={url} className="break-all text-neutral-700" title={url}>
+              {truncateUrl(url, 70)}
+            </p>
+          ))
+        : null}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setExpanded(!expanded);
+        }}
+        className="text-xs font-medium text-blue-600 hover:underline"
+      >
+        {expanded ? "− show less" : `+ ${items.length - 2} more`}
+      </button>
+      </div>
+  );
+}
+
 export default function ImageResultList({
   results,
   onSelect,
@@ -46,48 +98,52 @@ export default function ImageResultList({
               <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
                 <th className="px-5 py-3 font-medium">#</th>
                 <th className="px-3 py-3 font-medium">Image</th>
-                <th className="px-3 py-3 font-medium">Page URL</th>
-                <th className="px-3 py-3 font-medium">Image URL</th>
+                <th className="px-3 py-3 font-medium">Page URL(s)</th>
+                <th className="px-3 py-3 font-medium">Image URL(s)</th>
                 <th className="px-3 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Remark</th>
               </tr>
             </thead>
             <tbody>
-              {visible.map((result, index) => (
-                <tr
-                  key={result.id}
-                  onClick={() => onSelect(result)}
-                  className={`cursor-pointer border-b border-neutral-100 transition hover:bg-blue-50 ${
-                    selectedId === result.id ? "bg-blue-50" : ""
-                  }`}
-                >
-                  <td className="px-5 py-3 text-neutral-500">{index + 1}</td>
-                  <td className="px-3 py-3">
-                    {result.previewUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={result.previewUrl}
-                        alt=""
-                        className="h-12 w-16 rounded border border-neutral-200 bg-neutral-50 object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-12 w-16 items-center justify-center rounded border border-neutral-200 bg-neutral-50 text-[10px] text-neutral-400">
-                        {result.status === "FAILED" ? "n/a" : "…"}
-                      </div>
-                    )}
-                  </td>
-                  <td className="max-w-[16rem] truncate px-3 py-3 text-neutral-700" title={result.pageUrl}>
-                    {result.pageUrl || "—"}
-                  </td>
-                  <td className="max-w-[16rem] truncate px-3 py-3 text-neutral-700" title={result.imageUrl}>
-                    {result.imageUrl || "—"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusBadge status={result.status} />
-                  </td>
-                  <td className="max-w-[20rem] px-5 py-3 text-neutral-600">{result.remark}</td>
-                </tr>
-              ))}
+              {visible.map((result, index) => {
+                const pages = [...new Set(result.occurrences.map((o) => o.pageUrl))];
+                const images = [...new Set(result.occurrences.map((o) => o.imageUrl))];
+                return (
+                  <tr
+                    key={result.id}
+                    onClick={() => onSelect(result)}
+                    className={`cursor-pointer border-b border-neutral-100 transition hover:bg-blue-50 ${
+                      selectedId === result.id ? "bg-blue-50" : ""
+                    }`}
+                  >
+                    <td className="px-5 py-3 text-neutral-500">{index + 1}</td>
+                    <td className="px-3 py-3">
+                      {result.previewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={result.previewUrl}
+                          alt=""
+                          className="h-12 w-16 rounded border border-neutral-200 bg-neutral-50 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-16 items-center justify-center rounded border border-neutral-200 bg-neutral-50 text-[10px] text-neutral-400">
+                          {result.status === "FAILED" ? "n/a" : "…"}
+                        </div>
+                      )}
+                    </td>
+                    <td className="max-w-[18rem] px-3 py-3">
+                      <UrlList items={pages} emptyText="—" />
+                    </td>
+                    <td className="max-w-[18rem] px-3 py-3">
+                      <UrlList items={images} emptyText="—" />
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusBadge status={result.status} />
+                    </td>
+                    <td className="max-w-[20rem] px-5 py-3 text-neutral-600">{result.remark}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1,0 +1,131 @@
+import StatusBadge from "@/components/StatusBadge";
+import type { ImageScanResult } from "@/types/scanner";
+
+export default function ImageDetail({ result }: { result: ImageScanResult }) {
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-4 text-lg font-semibold text-neutral-900">Image Detail</h2>
+
+      <div className="mb-4 flex items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+        {result.previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={result.previewUrl} alt="Image preview" className="max-h-72 w-auto rounded object-contain" />
+        ) : (
+          <p className="text-sm text-neutral-400">No preview available</p>
+        )}
+      </div>
+
+      <dl className="space-y-3 text-sm">
+        <div>
+          <dt className="font-medium text-neutral-500">Status</dt>
+          <dd className="mt-1">
+            <StatusBadge status={result.status} />
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium text-neutral-500">Remark</dt>
+          <dd className="mt-1 text-neutral-800">{result.remark}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-neutral-500">Page URL</dt>
+          <dd className="mt-1 break-all text-blue-700">
+            {result.pageUrl ? (
+              <a href={result.pageUrl} target="_blank" rel="noopener noreferrer nofollow">
+                {result.pageUrl}
+              </a>
+            ) : (
+              "—"
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium text-neutral-500">Image URL</dt>
+          <dd className="mt-1 break-all text-blue-700">
+            {result.imageUrl ? (
+              <a href={result.imageUrl} target="_blank" rel="noopener noreferrer nofollow">
+                {result.imageUrl}
+              </a>
+            ) : (
+              "—"
+            )}
+          </dd>
+        </div>
+        {result.width && result.height ? (
+          <div className="flex gap-6">
+            <div>
+              <dt className="font-medium text-neutral-500">Dimensions</dt>
+              <dd className="mt-1 text-neutral-800">
+                {result.width} × {result.height}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-neutral-500">Size</dt>
+              <dd className="mt-1 text-neutral-800">
+                {result.byteSize ? `${(result.byteSize / 1024).toFixed(0)} KB` : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-neutral-500">Type</dt>
+              <dd className="mt-1 text-neutral-800">{result.mimeType ?? "—"}</dd>
+            </div>
+          </div>
+        ) : null}
+        {result.occurrences.length > 1 ? (
+          <div>
+            <dt className="font-medium text-neutral-500">
+              Also found on ({result.occurrences.length - 1} more page
+              {result.occurrences.length > 2 ? "s" : ""})
+            </dt>
+            <dd className="mt-1 space-y-1">
+              {result.occurrences.slice(1).map((occurrence) => (
+                <p key={`${occurrence.pageUrl}-${occurrence.imageUrl}`} className="break-all text-neutral-700">
+                  {occurrence.pageUrl}
+                </p>
+              ))}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+
+      <h3 className="mt-6 mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+        Reverse Search Results
+      </h3>
+      {result.reverseSearchResults && result.reverseSearchResults.length > 0 ? (
+        <ol className="space-y-2">
+          {result.reverseSearchResults.map((match, index) => (
+            <li key={`${match.sourceUrl}-${index}`} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+              <p className="font-medium text-neutral-900">
+                {index + 1}. {match.sourceName}
+              </p>
+              <a
+                href={match.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="break-all text-sm text-blue-700 hover:underline"
+              >
+                {match.sourceUrl}
+              </a>
+              {match.similarity !== undefined ? (
+                <p className="text-sm text-neutral-600">Similarity: {match.similarity}%</p>
+              ) : null}
+              <p className="mt-1 text-xs text-neutral-500">via {match.providerId}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-sm text-neutral-500">
+          {result.status === "NO_MATCH"
+            ? "No matching image found by the configured providers."
+            : result.status === "REQUIRES_REVIEW"
+              ? "No provider searched this image. Manual verification required."
+              : "No reverse search results available."}
+        </p>
+      )}
+
+      <p className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+        Screening hint only: a match means the image exists elsewhere. It does not establish copyright
+        ownership or infringement. Verify the source and license manually.
+      </p>
+    </section>
+  );
+}

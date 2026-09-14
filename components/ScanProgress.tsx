@@ -1,0 +1,79 @@
+import type { ScanProgress } from "@/types/scanner";
+
+export default function ScanProgress({
+  progress,
+  onStop,
+}: {
+  progress: ScanProgress;
+  onStop?: () => void;
+}) {
+  const running = progress.state === "RUNNING";
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-neutral-500">Target</p>
+          <p className="font-medium break-all text-neutral-900">{progress.targetUrl}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+              running
+                ? "border-blue-200 bg-blue-50 text-blue-700"
+                : progress.state === "COMPLETED"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : progress.state === "STOPPED"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            {running && <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />}
+            {running ? "Scanning…" : progress.state === "COMPLETED" ? "Completed" : progress.state === "STOPPED" ? "Stopped" : "Failed"}
+          </span>
+          {running && onStop ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50"
+            >
+              Stop
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-3 gap-3 sm:gap-6">
+        <div className="rounded-lg bg-neutral-50 p-3">
+          <dt className="text-xs text-neutral-500">Pages scanned</dt>
+          <dd className="text-2xl font-semibold text-neutral-900">{progress.pagesScanned}</dd>
+        </div>
+        <div className="rounded-lg bg-neutral-50 p-3">
+          <dt className="text-xs text-neutral-500">Images found</dt>
+          <dd className="text-2xl font-semibold text-neutral-900">{progress.imagesFound}</dd>
+        </div>
+        <div className="rounded-lg bg-neutral-50 p-3">
+          <dt className="text-xs text-neutral-500">Images processed</dt>
+          <dd className="text-2xl font-semibold text-neutral-900">{progress.imagesProcessed}</dd>
+        </div>
+      </dl>
+
+      {running && (progress.currentPage || progress.currentImage) ? (
+        <div className="mt-4 space-y-1 text-sm text-neutral-600">
+          {progress.currentPage ? (
+            <p className="truncate">
+              <span className="font-medium text-neutral-800">Current page: </span>
+              <span className="break-all">{progress.currentPage}</span>
+            </p>
+          ) : null}
+          {progress.currentImage ? (
+            <p className="truncate">
+              <span className="font-medium text-neutral-800">Current image: </span>
+              <span className="break-all">{progress.currentImage}</span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}

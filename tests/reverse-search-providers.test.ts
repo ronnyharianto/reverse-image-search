@@ -15,6 +15,7 @@ const imageInput: ImageInput = {
 describe("SerpApiProvider", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("searches Google Lens by the image URL", async () => {
@@ -81,6 +82,41 @@ describe("SerpApiProvider", () => {
     const result = await new SerpApiProvider("test-key").search(imageInput);
     expect(result.searched).toBe(true);
     if (result.searched) expect(result.matches).toHaveLength(1);
+  });
+
+  it("keeps 25 Lens matches by default", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          visual_matches: Array.from({ length: 30 }, (_, index) => ({
+            link: `https://source.test/${index}`,
+          })),
+        }),
+      ),
+    );
+
+    const result = await new SerpApiProvider("test-key").search(imageInput);
+    expect(result.searched).toBe(true);
+    if (result.searched) expect(result.matches).toHaveLength(25);
+  });
+
+  it("uses SERPAPI_MAX_MATCHES when configured", async () => {
+    vi.stubEnv("SERPAPI_MAX_MATCHES", "12");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          visual_matches: Array.from({ length: 30 }, (_, index) => ({
+            link: `https://source.test/${index}`,
+          })),
+        }),
+      ),
+    );
+
+    const result = await new SerpApiProvider("test-key").search(imageInput);
+    expect(result.searched).toBe(true);
+    if (result.searched) expect(result.matches).toHaveLength(12);
   });
 });
 

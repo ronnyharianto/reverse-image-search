@@ -15,7 +15,7 @@ import type { ImageInput, ProviderResult, ReverseImageSearchProvider } from "@/l
 
 const SEARCH_ENDPOINT = "https://serpapi.com/search";
 const REQUEST_TIMEOUT_MS = 25_000;
-const MAX_MATCHES = 10;
+const DEFAULT_MAX_MATCHES = 25;
 
 interface LensVisualMatch {
   title?: unknown;
@@ -80,7 +80,7 @@ export class SerpApiProvider implements ReverseImageSearchProvider {
       }
 
       const rawMatches = Array.isArray(payload.visual_matches) ? payload.visual_matches : [];
-      const matches = normalizeMatches(rawMatches).slice(0, MAX_MATCHES);
+      const matches = normalizeMatches(rawMatches).slice(0, getMaxMatches());
 
       if (matches.length === 0) {
         return {
@@ -115,6 +115,16 @@ export class SerpApiProvider implements ReverseImageSearchProvider {
 interface NormalizedLensMatch extends MatchSource {
   /** Lens reports true when the match is an exact copy of the searched image. */
   exactMatch?: boolean;
+}
+
+function getMaxMatches(): number {
+  const rawValue = process.env.SERPAPI_MAX_MATCHES?.trim();
+  if (!rawValue) return DEFAULT_MAX_MATCHES;
+
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed < 1) return DEFAULT_MAX_MATCHES;
+
+  return parsed;
 }
 
 function normalizeMatches(rawMatches: unknown[]): NormalizedLensMatch[] {

@@ -36,7 +36,11 @@ const globalForScans = globalThis as unknown as {
 const scans: Map<string, ScanEntry> = globalForScans.__copyrightScannerScans ?? new Map();
 globalForScans.__copyrightScannerScans = scans;
 
-export function createScanEntry(scanId: string, targetUrl: string): ScanEntry {
+export function createScanEntry(
+  scanId: string,
+  targetUrl: string,
+  providers: readonly string[] = [],
+): ScanEntry {
   const progress: ScanProgress = {
     scanId,
     targetUrl,
@@ -45,6 +49,7 @@ export function createScanEntry(scanId: string, targetUrl: string): ScanEntry {
     imagesFound: 0,
     imagesProcessed: 0,
     startedAt: new Date().toISOString(),
+    providers: [...providers],
   };
   const entry: ScanEntry = {
     progress,

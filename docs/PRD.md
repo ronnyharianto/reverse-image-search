@@ -90,7 +90,9 @@ The page may also offer an optional **reverse image search provider selection** 
 - Configured providers can be toggled on/off for the upcoming scan.
 - Providers whose credentials are missing are shown but locked, with a
   `Not configured` badge naming the environment variable required to enable them.
-- If no selection is made, the system defaults to running every configured provider.
+- If no selection is made, the system defaults to running Wikimedia Commons only;
+  opt-in providers (SerpAPI, Google Vision, custom) are disabled by default and must be
+  selected explicitly for a scan.
 
 ---
 
@@ -223,7 +225,8 @@ Provider selection rules:
    `configured` state and required environment variables (`GET /api/providers`).
 2. A scan request may specify which providers to use. The API must reject requests
    naming unconfigured providers instead of silently skipping them.
-3. When no selection is specified, every configured provider runs.
+3. When no selection is specified, only Wikimedia Commons runs (default-enabled);
+   opt-in providers stay disabled even when their credentials are configured.
 4. When multiple providers run, their results are merged: `MATCH_FOUND` wins over
    `NO_MATCH`; a `FAILED` provider only surfaces when every provider failed.
 5. If no provider ran for an image, the image is marked `REQUIRES_REVIEW`. The system

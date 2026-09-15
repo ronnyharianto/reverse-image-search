@@ -109,7 +109,9 @@ Every scan runs one or more **reverse image search providers** and merges their 
 (`MATCH_FOUND` wins over `NO_MATCH`). Before starting a scan, the home page shows a
 **provider picker** where you can:
 
-- toggle any configured provider on/off for that scan,
+- toggle any configured provider on/off for that scan — by default only
+  **Wikimedia Commons** is enabled; SerpAPI, Google Vision and custom endpoints must be
+  selected explicitly for each scan (they may upload image bytes or cost money),
 - see providers whose credentials are missing as **“Not configured”** (locked, with the env
   var name needed to enable them).
 
@@ -132,7 +134,9 @@ Notes:
 
 ## Configuration
 
-No configuration is required for basic functionality (no paid services). Restart the dev
+No configuration is required for basic functionality (no paid services). Setting a key
+**enables** the matching provider in the picker but does not turn it on by default — each
+scan runs Wikimedia Commons unless you select additional providers. Restart the dev
 server after changing `.env.local`.
 
 ```bash

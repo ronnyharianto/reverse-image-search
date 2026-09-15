@@ -17,6 +17,10 @@ import { getCustomProviderConfig, CustomProvider } from "@/lib/reverse-search/cu
  * A scan selects which providers run via `getProviders(enabledIds)`. Providers
  * whose credentials are not configured can never be enabled — the UI shows
  * them as "Not configured" (see getProviderCatalog).
+ *
+ * Default selection (no explicit selection given): Wikimedia Commons only.
+ * Opt-in providers (SerpAPI, Google Vision, custom) must be selected explicitly
+ * per scan, even when their credentials are configured.
  */
 
 export interface ProviderSet {
@@ -33,6 +37,8 @@ export interface ProviderCatalogItem {
   description: string;
   /** True when the required credentials/env config are present. */
   configured: boolean;
+  /** True when this provider runs by default (Wikimedia Commons only). */
+  defaultEnabled: boolean;
   /** Env vars or config needed to enable this provider. */
   requires: string[];
 }
@@ -47,6 +53,22 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 function isProviderId(value: string): value is ProviderId {
   return (PROVIDER_IDS as readonly string[]).includes(value);
+}
+
+/** Providers that run when a scan does not specify a selection (commons only). */
+export const DEFAULT_ENABLED_PROVIDER_IDS: readonly ProviderId[] = [COMMONS_ID];
+
+/**
+ * Which provider ids a scan with this selection will actually run, in run
+ * order — enabled AND configured only. Used to show the providers in the
+ * scan header before/while the search executes.
+ */
+export function getActiveProviderIds(enabledIds?: readonly string[]): ProviderId[] {
+  const configured = getConfiguredProviderIds();
+  const selected = enabledIds ?? DEFAULT_ENABLED_PROVIDER_IDS;
+  return PROVIDER_IDS.filter(
+    (id) => selected.includes(id) && configured.has(id),
+  );
 }
 
 /** Which opt-in providers currently have credentials configured. */
@@ -67,6 +89,7 @@ export function getProviderCatalog(): ProviderCatalogItem[] {
       displayName: "Wikimedia Commons",
       description: "Exact-content SHA-1 lookup over Wikimedia Commons. Free, no key required.",
       configured: configured.has(COMMONS_ID),
+      defaultEnabled: true,
       requires: [],
     },
     {
@@ -74,6 +97,7 @@ export function getProviderCatalog(): ProviderCatalogItem[] {
       displayName: "Google Lens (SerpAPI)",
       description: "Web-wide reverse image search via Google Lens. ~250 free searches/month.",
       configured: configured.has(SERPAPI_ID),
+      defaultEnabled: false,
       requires: ["SERPAPI_API_KEY"],
     },
     {
@@ -81,6 +105,7 @@ export function getProviderCatalog(): ProviderCatalogItem[] {
       displayName: "Google Cloud Vision",
       description: "Official Google Web Detection. Uploads image bytes. 1,000 free units/month.",
       configured: configured.has(GOOGLE_VISION_ID),
+      defaultEnabled: false,
       requires: ["GOOGLE_VISION_API_KEY"],
     },
     {
@@ -88,6 +113,7 @@ export function getProviderCatalog(): ProviderCatalogItem[] {
       displayName: "Custom endpoint",
       description: "Your own reverse-search endpoint (bring your own key).",
       configured: configured.has(CUSTOM_ID),
+      defaultEnabled: false,
       requires: ["REVERSE_SEARCH_CUSTOM_URL"],
     },
   ];
@@ -96,21 +122,19 @@ export function getProviderCatalog(): ProviderCatalogItem[] {
 /**
  * Build the provider set for a scan.
  *
- * `enabledIds` selects which providers run. A provider is only instantiated
- * when it is BOTH enabled AND configured; silently skipping unconfigured
- * providers would misrepresent what was searched — callers should validate
- * against the catalog first (the scan API does).
+ * `enabledIds` selects which providers run. When omitted, only the default
+ * providers run (Wikimedia Commons) — opt-in providers stay off even when
+ * their credentials are configured. A provider is only instantiated when it is
+ * BOTH enabled AND configured; silently skipping unconfigured providers would
+ * misrepresent what was searched — callers should validate against the
+ * catalog first (the scan API does).
  */
 export function getProviders(enabledIds?: readonly string[]): ProviderSet {
   const configured = getConfiguredProviderIds();
+  const selected = enabledIds ?? DEFAULT_ENABLED_PROVIDER_IDS;
   const enabled = new Set(
-    (enabledIds ?? []).filter(isProviderId).filter((id) => configured.has(id)),
+    selected.filter(isProviderId).filter((id) => configured.has(id)),
   );
-
-  // Default (no explicit selection): every configured provider runs.
-  if (enabledIds === undefined) {
-    return buildAllConfiguredProviders(configured);
-  }
 
   return {
     commons: enabled.has(COMMONS_ID) ? new WikimediaCommonsProvider() : undefined,
@@ -121,19 +145,6 @@ export function getProviders(enabledIds?: readonly string[]): ProviderSet {
     custom: enabled.has(CUSTOM_ID) && getCustomProviderConfig()
       ? new CustomProvider(getCustomProviderConfig()!)
       : undefined,
-  };
-}
-
-function buildAllConfiguredProviders(configured: Set<ProviderId>): ProviderSet {
-  return {
-    commons: configured.has(COMMONS_ID) ? new WikimediaCommonsProvider() : undefined,
-    serpapi: configured.has(SERPAPI_ID)
-      ? new SerpApiProvider(process.env.SERPAPI_API_KEY!.trim())
-      : undefined,
-    googleVision: configured.has(GOOGLE_VISION_ID)
-      ? new GoogleVisionProvider(process.env.GOOGLE_VISION_API_KEY!.trim())
-      : undefined,
-    custom: getCustomProviderConfig() ? new CustomProvider(getCustomProviderConfig()!) : undefined,
   };
 }
 

@@ -3,7 +3,7 @@ import type { ScanState } from "@/types/scanner";
 import { IMAGE_CONCURRENCY, MAX_PAGES, MAX_CRAWL_DEPTH, PAGE_CONCURRENCY } from "@/types/scanner";
 import { crawlSite } from "@/lib/crawler/crawler";
 import { processImageTask, type ImageTask } from "@/lib/scan/image-processor";
-import { getProviders } from "@/lib/reverse-search";
+import { getActiveProviderIds, getProviders } from "@/lib/reverse-search";
 import { createScanEntry, getScanEntry, publishEvent, type ScanEntry } from "@/lib/scan/scan-store";
 
 /**
@@ -61,8 +61,9 @@ export async function startScan(
   options?: { enabledProviderIds?: string[] },
 ): Promise<string> {
   const scanId = randomUUID();
-  const entry = createScanEntry(scanId, targetUrl);
   const providers = getProviders(options?.enabledProviderIds);
+  const activeIds = getActiveProviderIds(options?.enabledProviderIds);
+  const entry = createScanEntry(scanId, targetUrl, activeIds);
 
   // Fire-and-forget: API returns the scanId immediately, progress streams via SSE.
   void runScan(entry, providers).catch((error) => {

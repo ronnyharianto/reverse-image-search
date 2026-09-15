@@ -1,4 +1,4 @@
-import type { ScanProgress } from "@/types/scanner";
+import { PROVIDER_LABELS, type ScanProgress } from "@/types/scanner";
 
 export default function ScanProgress({
   progress,
@@ -12,9 +12,23 @@ export default function ScanProgress({
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-neutral-500">Target</p>
           <p className="font-medium break-all text-neutral-900">{progress.targetUrl}</p>
+          {progress.providers && progress.providers.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-neutral-500">Search via:</span>
+              {progress.providers.map((providerId) => (
+                <span
+                  key={providerId}
+                  className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600"
+                  title={PROVIDER_LABELS[providerId] ?? providerId}
+                >
+                  {PROVIDER_LABELS[providerId] ?? providerId}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-3">
           <span

@@ -82,6 +82,8 @@ export interface ScanProgress {
   currentImage?: string;
   startedAt: string;
   finishedAt?: string;
+  /** Reverse-search providers selected for this scan, in run order. */
+  providers?: string[];
 }
 
 export interface ScanSnapshot {

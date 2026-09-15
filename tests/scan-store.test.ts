@@ -24,6 +24,12 @@ describe("scan store", () => {
     expect(getScanEntry("scan-1")).toBe(entry);
     expect(entry.progress.state).toBe("RUNNING");
     expect(entry.progress.pagesScanned).toBe(0);
+    expect(entry.progress.providers).toEqual([]);
+  });
+
+  it("records the selected providers on the scan progress", () => {
+    const entry = createScanEntry("scan-1b", "https://example.com", ["commons", "serpapi"]);
+    expect(entry.progress.providers).toEqual(["commons", "serpapi"]);
   });
 
   it("dedups identical bytes via the sha index, merging occurrences", () => {

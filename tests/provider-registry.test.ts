@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_ENABLED_PROVIDER_IDS,
+  getActiveProviderIds,
   getConfiguredProviderIds,
   getProviderCatalog,
   getProviders,
@@ -67,18 +69,39 @@ describe("provider registry", () => {
     expect(providers.googleVision).toBeUndefined();
   });
 
-  it("defaults to all configured providers when no selection is given", () => {
+  it("defaults to Wikimedia Commons only when no selection is given", () => {
     vi.stubEnv("SERPAPI_API_KEY", "k1");
     const providers = getProviders();
     expect(providers.commons).toBeDefined();
-    expect(providers.serpapi).toBeDefined();
+    expect(providers.serpapi).toBeUndefined();
     expect(providers.googleVision).toBeUndefined();
+    expect(providers.custom).toBeUndefined();
+  });
+
+  it("catalog marks only Wikimedia Commons as default-enabled", () => {
+    vi.stubEnv("SERPAPI_API_KEY", "k1");
+    const catalog = getProviderCatalog();
+    const byId = new Map(catalog.map((item) => [item.id, item]));
+    expect(byId.get("commons")?.defaultEnabled).toBe(true);
+    expect(byId.get("serpapi")?.defaultEnabled).toBe(false);
+    expect(byId.get("google-vision")?.defaultEnabled).toBe(false);
+    expect(byId.get("custom")?.defaultEnabled).toBe(false);
+    expect(DEFAULT_ENABLED_PROVIDER_IDS).toEqual(["commons"]);
   });
 
   it("ignores unknown provider ids", () => {
     const providers = getProviders(["commons", "not-a-provider"]);
     expect(providers.commons).toBeDefined();
     expect(providers.serpapi).toBeUndefined();
+  });
+
+  it("resolves active provider ids enabled, configured and in run order", () => {
+    vi.stubEnv("SERPAPI_API_KEY", "k1");
+    // Run order follows PROVIDER_IDS: commons, serpapi, google-vision, custom.
+    expect(getActiveProviderIds(["serpapi", "commons"])).toEqual(["commons", "serpapi"]);
+    expect(getActiveProviderIds(["commons", "google-vision"])).toEqual(["commons"]);
+    expect(getActiveProviderIds()).toEqual(["commons"]);
+    expect(getActiveProviderIds(["not-a-provider"])).toEqual([]);
   });
 });
 

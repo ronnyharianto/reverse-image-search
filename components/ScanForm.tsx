@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProviderPicker, { type ProviderCatalogItem } from "@/components/ProviderPicker";
+import { loadStoredSelection, mergeStoredSelection, saveStoredSelection } from "@/lib/provider-selection";
 
 export default function ScanForm() {
   const router = useRouter();
@@ -18,12 +19,19 @@ export default function ScanForm() {
       .then((payload: { providers?: ProviderCatalogItem[] }) => {
         if (cancelled || !payload.providers) return;
         setProviders(payload.providers);
-        setSelectedIds(new Set(payload.providers.filter((p) => p.configured).map((p) => p.id)));
+        // Restore the last-used selection when valid; otherwise pre-check the
+        // defaults (Wikimedia Commons only). Opt-in providers stay unchecked
+        // until selected, even when their credentials are configured.
+        setSelectedIds(
+          new Set(
+            mergeStoredSelection(loadStoredSelection(), payload.providers),
+          ),
+        );
       })
       .catch(() => {
         if (cancelled) return;
         // Picker stays hidden when the catalog is unavailable; scans then omit
-        // the provider field and use the server default (all configured ones).
+        // the provider field and use the server default (Wikimedia Commons only).
         setProviders([]);
         setSelectedIds(new Set());
       });
@@ -31,6 +39,12 @@ export default function ScanForm() {
       cancelled = true;
     };
   }, []);
+
+  /** Persist the selection so the next visit starts from it. */
+  function handleSelectionChange(next: Set<string>) {
+    setSelectedIds(next);
+    saveStoredSelection(Array.from(next));
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,7 +54,8 @@ export default function ScanForm() {
       const response = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Omit `providers` when the catalog never loaded → server-side default.
+        // Omit `providers` when the catalog never loaded → server-side default
+        // (Wikimedia Commons only).
         body: JSON.stringify({
           url,
           ...(providers.length > 0 ? { providers: Array.from(selectedIds) } : {}),
@@ -89,7 +104,7 @@ export default function ScanForm() {
         </p>
       ) : null}
       {providers.length > 0 ? (
-        <ProviderPicker providers={providers} selectedIds={selectedIds} onChange={setSelectedIds} />
+        <ProviderPicker providers={providers} selectedIds={selectedIds} onChange={handleSelectionChange} />
       ) : null}
       <p className="text-xs leading-relaxed text-neutral-500">
         This is a copyright-risk <strong>screening</strong> tool. It does not determine whether an image

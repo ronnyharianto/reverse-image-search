@@ -7,6 +7,8 @@ export interface ProviderCatalogItem {
   displayName: string;
   description: string;
   configured: boolean;
+  /** Pre-checked by default; currently Wikimedia Commons only. */
+  defaultEnabled: boolean;
   requires: string[];
 }
 
@@ -15,7 +17,8 @@ export interface ProviderCatalogItem {
  * - Enabled providers can be toggled on/off per scan.
  * - Unconfigured providers are shown but locked, with a "Not configured" badge
  *   and the env var(s) needed to enable them.
- * - Wikimedia Commons (free, no key) is always available.
+ * - Wikimedia Commons (free, no key) is always available and is the only
+ *   provider pre-checked by default; opt-in providers must be enabled manually.
  */
 export default function ProviderPicker({
   providers,

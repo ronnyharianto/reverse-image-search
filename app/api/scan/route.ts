@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
 
-  // Optional provider selection: default = every configured provider runs.
+  // Optional provider selection: default = Wikimedia Commons only; opt-in
+  // providers run only when explicitly selected.
   let enabledProviderIds: string[] | undefined;
   if (body.providers !== undefined) {
     if (

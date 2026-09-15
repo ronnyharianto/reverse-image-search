@@ -3,7 +3,7 @@
 import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import { MATCH_CATEGORY_STYLES, summarizeMatchCategories } from "@/lib/match-categorization";
-import type { ImageScanResult } from "@/types/scanner";
+import { hasFailedProviderLookup, type ImageScanResult } from "@/types/scanner";
 
 function truncateUrl(url: string, max = 60): string {
   return url.length > max ? `${url.slice(0, max - 1)}…` : url;
@@ -61,10 +61,19 @@ export default function ImageResultList({
   results,
   onSelect,
   selectedId,
+  onRetry,
+  retryingId,
+  retryDisabled = false,
 }: {
   results: ImageScanResult[];
   onSelect: (result: ImageScanResult) => void;
   selectedId?: string;
+  /** Starts a retry of the failed provider lookup for one row. */
+  onRetry?: (result: ImageScanResult) => void;
+  /** Row currently being retried (shows a spinner state on its button). */
+  retryingId?: string | null;
+  /** True while the scan is running — retries must wait for completion. */
+  retryDisabled?: boolean;
 }) {
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const visible = onlyFlagged
@@ -110,6 +119,8 @@ export default function ImageResultList({
                 const pages = [...new Set(result.occurrences.map((o) => o.pageUrl))];
                 const images = [...new Set(result.occurrences.map((o) => o.imageUrl))];
                 const categories = summarizeMatchCategories(result.reverseSearchResults ?? []);
+                const retryable = result.status === "FAILED" || hasFailedProviderLookup(result);
+                const isRetrying = retryingId === result.id;
                 return (
                   <tr
                     key={result.id}
@@ -156,6 +167,24 @@ export default function ImageResultList({
                             );
                           })}
                         </div>
+                      ) : null}
+                      {retryable && onRetry ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onRetry(result);
+                          }}
+                          disabled={retryDisabled || isRetrying}
+                          title={
+                            retryDisabled
+                              ? "Wait for the scan to finish before retrying."
+                              : "Run the failed reverse search again."
+                          }
+                          className="mt-1.5 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isRetrying ? "Retrying…" : "Retry lookup"}
+                        </button>
                       ) : null}
                     </td>
                     <td className="max-w-[20rem] px-5 py-3 text-neutral-600">{result.remark}</td>

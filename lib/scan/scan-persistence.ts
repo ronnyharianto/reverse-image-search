@@ -1,6 +1,6 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ScanSnapshot } from "@/types/scanner";
+import type { ImageScanResult, ScanSnapshot } from "@/types/scanner";
 
 /**
  * JSON persistence for finished scans.
@@ -86,5 +86,76 @@ export async function deleteScanSnapshot(targetUrl: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Find the saved snapshot file whose progress.scanId matches. Saved files
+ * are named after the target URL, not the scan id, so the folder must be
+ * scanned for a match.
+ */
+async function findSavedFilePathByScanId(scanId: string): Promise<string | null> {
+  let files: string[];
+  try {
+    files = await readdir(getResultsDir());
+  } catch {
+    return null;
+  }
+
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const filePath = path.join(getResultsDir(), file);
+    try {
+      const payload = JSON.parse(await readFile(filePath, "utf8")) as {
+        snapshot?: { progress?: { scanId?: string } };
+      };
+      if (payload.snapshot?.progress?.scanId === scanId) return filePath;
+    } catch {
+      // Skip unreadable/corrupt files.
+    }
+  }
+  return null;
+}
+
+/**
+ * Find the saved snapshot belonging to a scan id and return its raw file
+ * contents; null when no saved file matches (or the folder is missing).
+ */
+export async function findSavedSnapshotByScanId(scanId: string): Promise<string | null> {
+  const filePath = await findSavedFilePathByScanId(scanId);
+  if (!filePath) return null;
+  try {
+    return await readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Locate the saved snapshot file that belongs to a scan id and overwrite its
+ * results in place. Returns the file path on success, null when no saved file
+ * matches (live scans that were never auto-saved keep their retry results in
+ * memory only).
+ */
+export async function updateSavedSnapshotByScanId(
+  scanId: string,
+  results: ImageScanResult[],
+): Promise<string | null> {
+  const filePath = await findSavedFilePathByScanId(scanId);
+  if (!filePath) return null;
+
+  try {
+    const payload = JSON.parse(await readFile(filePath, "utf8")) as {
+      savedAt?: string;
+      snapshot?: ScanSnapshot;
+    };
+    if (!payload.snapshot) return null;
+
+    payload.snapshot.results = results;
+    payload.savedAt = new Date().toISOString();
+    await writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
+    return filePath;
+  } catch {
+    return null;
   }
 }

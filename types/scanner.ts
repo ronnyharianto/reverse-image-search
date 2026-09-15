@@ -103,6 +103,16 @@ export type ScanEvent =
   | { type: "done"; progress: ScanProgress }
   | { type: "error"; message: string };
 
+/**
+ * True when at least one provider of this row failed its lookup (e.g. a
+ * network or quota error), so the reverse search can be retried for it.
+ * Rows without per-provider outcomes (download/validation failures) are not
+ * retryable — there is no provider result to refresh.
+ */
+export function hasFailedProviderLookup(result: ImageScanResult): boolean {
+  return (result.providerOutcomes ?? []).some((outcome) => !outcome.searched);
+}
+
 /** Display labels for statuses — screening wording only. */
 export const STATUS_LABELS: Record<ImageStatus, string> = {
   PROCESSING: "Processing",

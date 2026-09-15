@@ -15,6 +15,7 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
   const [selected, setSelected] = useState<ImageScanResult | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   useEffect(() => {
     params.then((p) => setScanId(p.id));
@@ -94,6 +95,35 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
     if (!scanId) return;
     await fetch(`/api/scan/${scanId}/stop`, { method: "POST" }).catch(() => undefined);
   }, [scanId]);
+
+  // Retry the failed reverse-search lookup of one image; the refreshed row
+  // arrives from the response and replaces the stale one in the list.
+  const handleRetry = useCallback(
+    async (result: ImageScanResult): Promise<void> => {
+      if (!scanId || progress?.state === "RUNNING") return;
+      setRetryingId(result.id);
+      try {
+        const response = await fetch(`/api/scan/${scanId}/retry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultId: result.id }),
+        });
+        const payload = (await response.json().catch(() => null)) as { result?: ImageScanResult; error?: string } | null;
+        if (!response.ok || !payload?.result) {
+          setConnectionError(payload?.error ?? "Retry failed. Please try again.");
+          return;
+        }
+        applyResult(payload.result);
+        setSelected((prev) => (prev && prev.id === payload.result!.id ? payload.result : prev));
+        setConnectionError(null);
+      } catch {
+        setConnectionError("Retry failed. Please try again.");
+      } finally {
+        setRetryingId(null);
+      }
+    },
+    [scanId, progress?.state, applyResult],
+  );
 
   // Saved view mode: derived from the URL (?saved=1, set by "Show last result")
   // rather than an effect, so no extra state or render pass is needed.
@@ -195,10 +225,17 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
           <ScanProgress progress={progress} onStop={isSavedView ? undefined : handleStop} />
           <MatchCategorySummary results={results} />
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
-            <ImageResultList results={results} onSelect={setSelected} selectedId={selected?.id} />
+            <ImageResultList
+              results={results}
+              onSelect={setSelected}
+              selectedId={selected?.id}
+              onRetry={isSavedView ? undefined : handleRetry}
+              retryingId={retryingId}
+              retryDisabled={progress.state === "RUNNING"}
+            />
             <aside className="lg:sticky lg:top-6 h-fit">
               {selected ? (
-                <ImageDetail result={selected} />
+                <ImageDetail result={selected} onRetry={isSavedView ? undefined : handleRetry} retryDisabled={progress.state === "RUNNING"} />
               ) : (
                 <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center text-sm text-neutral-500">
                   Click a result row to inspect the image, its status, remark and reverse search sources.

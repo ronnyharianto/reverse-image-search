@@ -1,7 +1,10 @@
+"use client";
+
+import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import { categorizeSourceUrl } from "@/lib/match-categorization";
 import { MATCH_CATEGORY_STYLES, type MatchCategory } from "@/lib/match-categorization";
-import { PROVIDER_LABELS } from "@/types/scanner";
+import { hasFailedProviderLookup, PROVIDER_LABELS } from "@/types/scanner";
 import type { ImageScanResult } from "@/types/scanner";
 
 /** Friendly provider name for badges; falls back to the raw provider id. */
@@ -9,7 +12,17 @@ function providerLabel(providerId: string): string {
   return PROVIDER_LABELS[providerId] ?? providerId;
 }
 
-export default function ImageDetail({ result }: { result: ImageScanResult }) {
+export default function ImageDetail({
+  result,
+  onRetry,
+  retryDisabled = false,
+}: {
+  result: ImageScanResult;
+  onRetry?: (result: ImageScanResult) => void;
+  /** True while the scan is running — retries must wait for completion. */
+  retryDisabled?: boolean;
+}) {
+  const [retrying, setRetrying] = useState(false);
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
       <h2 className="mb-4 text-lg font-semibold text-neutral-900">Image Detail</h2>
@@ -170,6 +183,30 @@ export default function ImageDetail({ result }: { result: ImageScanResult }) {
             })}
           </ul>
         </>
+      ) : null}
+
+      {onRetry && (result.status === "FAILED" || hasFailedProviderLookup(result)) ? (
+        <button
+          type="button"
+          onClick={async () => {
+            setRetrying(true);
+            try {
+              await onRetry(result);
+            } finally {
+              setRetrying(false);
+            }
+          }}
+          disabled={retryDisabled || retrying}
+          title={
+            retryDisabled
+              ? "Wait for the scan to finish before retrying."
+              : "Run the failed reverse search again."
+          }
+          className="mt-6 w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {retrying ? "Retrying…" : "Retry lookup"}
+          {retryDisabled ? " (scan in progress)" : ""}
+        </button>
       ) : null}
 
       <p className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import ImageDetail from "@/components/ImageDetail";
 import ImageResultList from "@/components/ImageResultList";
+import MatchCategorySummary from "@/components/MatchCategorySummary";
 import ScanProgress from "@/components/ScanProgress";
 import type { ImageScanResult, ScanProgress as ProgressData, ScanEvent, ScanSnapshot } from "@/types/scanner";
 
@@ -13,6 +14,7 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
   const [results, setResults] = useState<ImageScanResult[]>([]);
   const [selected, setSelected] = useState<ImageScanResult | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     params.then((p) => setScanId(p.id));
@@ -88,6 +90,64 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
     await fetch(`/api/scan/${scanId}/stop`, { method: "POST" }).catch(() => undefined);
   }, [scanId]);
 
+  // Saved view mode: derived from the URL (?saved=1, set by "Show last result")
+  // rather than an effect, so no extra state or render pass is needed.
+  const savedView = scanId !== null && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("saved") === "1";
+
+  // Saved-snapshot fallback: when the URL carries ?saved=1 (opened from the
+  // "Show last result" action) or the live scan is gone (server restarted),
+  // load the persisted JSON and render it read-only.
+  useEffect(() => {
+    if (!scanId || progress) return;
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    const wantsSaved = params.get("saved") === "1";
+    const timer = setTimeout(() => {
+      if (cancelled || progress) return;
+      fetch(`/api/scan/${scanId}/saved`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload: { snapshot?: { progress?: ProgressData; results?: ImageScanResult[] } } | null) => {
+          if (cancelled || !payload?.snapshot?.progress || progress) return;
+          setProgress(payload.snapshot.progress);
+          setResults(payload.snapshot.results ?? []);
+        })
+        .catch(() => undefined);
+    }, wantsSaved ? 0 : 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scanId, progress]);
+
+  const isSavedView = savedView && progress !== null && progress.state !== "RUNNING";
+
+  // Persist the finished scan as JSON under data/results/ and download it.
+  const handleSave = useCallback(async () => {
+    if (!scanId) return;
+    setSaveState("saving");
+    try {
+      const response = await fetch("/api/scan/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scanId }),
+      });
+      if (!response.ok) {
+        setSaveState("error");
+        return;
+      }
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = "scan-result.json";
+      link.click();
+      URL.revokeObjectURL(downloadUrl);
+      setSaveState("saved");
+    } catch {
+      setSaveState("error");
+    }
+  }, [scanId]);
+
   if (!scanId) {
     return <main className="flex min-h-screen items-center justify-center text-neutral-500">Loading scan…</main>;
   }
@@ -99,7 +159,18 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
           ← New scan
         </Link>
         <h1 className="text-xl font-semibold text-neutral-900">Copyright Image Scanner</h1>
-        <span className="w-16" />
+        {progress && progress.state !== "RUNNING" && !isSavedView ? (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveState === "saving"}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : saveState === "error" ? "Save failed — retry" : "Save results (JSON)"}
+          </button>
+        ) : (
+          <span className="w-16" />
+        )}
       </div>
 
       {connectionError ? (
@@ -110,7 +181,14 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
 
       {progress ? (
         <div className="space-y-6">
-          <ScanProgress progress={progress} onStop={handleStop} />
+          {isSavedView ? (
+            <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+              Viewing a saved result (loaded from <code>data/results/</code>). Start a new scan from the home page
+              to re-check this website.
+            </p>
+          ) : null}
+          <ScanProgress progress={progress} onStop={isSavedView ? undefined : handleStop} />
+          <MatchCategorySummary results={results} />
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
             <ImageResultList results={results} onSelect={setSelected} selectedId={selected?.id} />
             <aside className="lg:sticky lg:top-6 h-fit">

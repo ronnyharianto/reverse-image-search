@@ -41,6 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# scanner data (thumbnails, scan artifacts) — never commit
+# scanner data (thumbnails, saved results, scan artifacts) — never commit
 /data/
 dev.log

@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import ProviderPicker, { type ProviderCatalogItem } from "@/components/ProviderPicker";
 import { loadStoredSelection, mergeStoredSelection, saveStoredSelection } from "@/lib/provider-selection";
 
+interface SavedScanWarning {
+  message: string;
+  savedScanId: string;
+}
+
 export default function ScanForm() {
   const router = useRouter();
   const [url, setUrl] = useState("");
@@ -12,6 +17,8 @@ export default function ScanForm() {
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderCatalogItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [savedWarning, setSavedWarning] = useState<SavedScanWarning | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/providers")
@@ -46,8 +53,7 @@ export default function ScanForm() {
     saveStoredSelection(Array.from(next));
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function startScan(fresh: boolean) {
     setError(null);
     setSubmitting(true);
     try {
@@ -55,13 +61,25 @@ export default function ScanForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Omit `providers` when the catalog never loaded → server-side default
-        // (Wikimedia Commons only).
+        // (Wikimedia Commons only). `fresh: true` skips the saved-result warning.
         body: JSON.stringify({
           url,
+          fresh,
           ...(providers.length > 0 ? { providers: Array.from(selectedIds) } : {}),
         }),
       });
-      const payload = (await response.json()) as { scanId?: string; error?: string };
+      const payload = (await response.json()) as {
+        scanId?: string;
+        warning?: string;
+        message?: string;
+        savedScanId?: string;
+        error?: string;
+      };
+      if (response.status === 409 && payload.warning === "saved-scan-exists" && payload.savedScanId) {
+        // A saved result for this URL exists — let the user decide.
+        setSavedWarning({ message: payload.message ?? "A saved result exists for this URL.", savedScanId: payload.savedScanId });
+        return;
+      }
       if (!response.ok || !payload.scanId) {
         setError(payload.error ?? "Could not start the scan.");
         return;
@@ -72,6 +90,12 @@ export default function ScanForm() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavedWarning(null);
+    await startScan(false);
   }
 
   return (
@@ -87,7 +111,10 @@ export default function ScanForm() {
         autoComplete="url"
         placeholder="https://example.com"
         value={url}
-        onChange={(event) => setUrl(event.target.value)}
+        onChange={(event) => {
+          setUrl(event.target.value);
+          setSavedWarning(null);
+        }}
         required
         className="w-full rounded-lg border border-neutral-300 bg-white px-4 py-3 text-base text-neutral-900 shadow-sm outline-none placeholder:text-neutral-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       />
@@ -102,6 +129,38 @@ export default function ScanForm() {
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </p>
+      ) : null}
+      {savedWarning ? (
+        <div role="alertdialog" aria-label="Saved scan found" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">⚠ Saved result found</p>
+          <p className="mt-1 leading-relaxed">{savedWarning.message}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => router.push(`/scan/${savedWarning.savedScanId}?saved=1`)}
+              className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700"
+            >
+              Show last result
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSavedWarning(null);
+                void startScan(true);
+              }}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+            >
+              Scan fresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setSavedWarning(null)}
+              className="rounded-lg px-3 py-2 text-xs font-medium text-neutral-500 transition hover:text-neutral-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : null}
       {providers.length > 0 ? (
         <ProviderPicker providers={providers} selectedIds={selectedIds} onChange={handleSelectionChange} />

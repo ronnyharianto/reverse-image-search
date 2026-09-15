@@ -8,6 +8,7 @@ import { inspectImage, isSupportedImageBytes } from "@/lib/image/metadata";
 import { fingerprintImage } from "@/lib/image/fingerprint";
 import { saveThumbnail } from "@/lib/image/thumbnails";
 import { getProviders, mergeProviderResults, summarizeProviderOutcomes } from "@/lib/reverse-search";
+import { categorizeSourceUrl } from "@/lib/match-categorization";
 import type { ReverseImageSearchProvider } from "@/lib/reverse-search/provider";
 import type { ScanEntry } from "@/lib/scan/scan-store";
 import { publishEvent } from "@/lib/scan/scan-store";
@@ -146,6 +147,11 @@ export async function processImageTask(
       const providerResults = await Promise.all(providersList.map((provider) => provider.search(imageInput)));
       const merged = mergeProviderResults(...providerResults);
       const providerOutcomes = summarizeProviderOutcomes(providersList, providerResults);
+      // Tag each match with its source-domain category (free media, stock, …).
+      const matches = merged.matches.map((match) => ({
+        ...match,
+        category: categorizeSourceUrl(match.sourceUrl),
+      }));
 
       const result: ImageScanResult = {
         id: newId(),
@@ -154,7 +160,7 @@ export async function processImageTask(
         status: merged.status,
         remark: merged.remark,
         previewUrl,
-        reverseSearchResults: merged.matches.length > 0 ? merged.matches : undefined,
+        reverseSearchResults: matches.length > 0 ? matches : undefined,
         providerOutcomes: providerOutcomes.length > 0 ? providerOutcomes : undefined,
         occurrences: [{ pageUrl, imageUrl: finalImageUrl }],
         width: inspection.width,

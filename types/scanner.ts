@@ -14,6 +14,9 @@ export type ImageStatus =
 
 export type ScanState = "RUNNING" | "COMPLETED" | "STOPPED" | "FAILED";
 
+/** Kind of domain hosting a reverse-search match (screening aid, not legal). */
+export type MatchCategory = "COMMERCIAL_STOCK" | "FREE_MEDIA" | "SOCIAL_PLATFORM" | "OTHER_SOURCE";
+
 /** One source returned by a reverse image search provider. */
 export interface MatchSource {
   /** Human-readable source name, e.g. "Wikimedia Commons". */
@@ -24,6 +27,8 @@ export interface MatchSource {
   similarity?: number;
   /** Provider that produced this match, e.g. "commons" or "custom". */
   providerId: string;
+  /** Domain category of the source (free media, commercial stock, …). */
+  category?: MatchCategory;
 }
 
 /** One page occurrence of an image (identical files can appear on many pages). */

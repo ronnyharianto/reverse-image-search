@@ -1,4 +1,6 @@
 import StatusBadge from "@/components/StatusBadge";
+import { categorizeSourceUrl } from "@/lib/match-categorization";
+import { MATCH_CATEGORY_STYLES, type MatchCategory } from "@/lib/match-categorization";
 import { PROVIDER_LABELS } from "@/types/scanner";
 import type { ImageScanResult } from "@/types/scanner";
 
@@ -98,25 +100,38 @@ export default function ImageDetail({ result }: { result: ImageScanResult }) {
       </h3>
       {result.reverseSearchResults && result.reverseSearchResults.length > 0 ? (
         <ol className="space-y-2">
-          {result.reverseSearchResults.map((match, index) => (
-            <li key={`${match.sourceUrl}-${index}`} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-              <p className="font-medium text-neutral-900">
-                {index + 1}. {match.sourceName}
-              </p>
-              <a
-                href={match.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="break-all text-sm text-blue-700 hover:underline"
-              >
-                {match.sourceUrl}
-              </a>
-              {match.similarity !== undefined ? (
-                <p className="text-sm text-neutral-600">Similarity: {match.similarity}%</p>
-              ) : null}
-              <p className="mt-1 text-xs text-neutral-500">via {providerLabel(match.providerId)}</p>
-            </li>
-          ))}
+          {result.reverseSearchResults.map((match, index) => {
+            const category: MatchCategory = match.category ?? categorizeSourceUrl(match.sourceUrl);
+            const style = MATCH_CATEGORY_STYLES[category];
+            return (
+              <li key={`${match.sourceUrl}-${index}`} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-neutral-900">
+                    {index + 1}. {match.sourceName}
+                  </p>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${style.classes}`}
+                    title={style.hint}
+                  >
+                    {style.label}
+                  </span>
+                </div>
+                <a
+                  href={match.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="break-all text-sm text-blue-700 hover:underline"
+                >
+                  {match.sourceUrl}
+                </a>
+                {match.similarity !== undefined ? (
+                  <p className="text-sm text-neutral-600">Similarity: {match.similarity}%</p>
+                ) : null}
+                <p className="mt-1 text-xs leading-relaxed text-neutral-500">{style.hint}</p>
+                <p className="mt-1 text-xs text-neutral-500">via {providerLabel(match.providerId)}</p>
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <p className="text-sm text-neutral-500">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
+import { MATCH_CATEGORY_STYLES, summarizeMatchCategories } from "@/lib/match-categorization";
 import type { ImageScanResult } from "@/types/scanner";
 
 function truncateUrl(url: string, max = 60): string {
@@ -108,6 +109,7 @@ export default function ImageResultList({
               {visible.map((result, index) => {
                 const pages = [...new Set(result.occurrences.map((o) => o.pageUrl))];
                 const images = [...new Set(result.occurrences.map((o) => o.imageUrl))];
+                const categories = summarizeMatchCategories(result.reverseSearchResults ?? []);
                 return (
                   <tr
                     key={result.id}
@@ -139,6 +141,22 @@ export default function ImageResultList({
                     </td>
                     <td className="px-3 py-3">
                       <StatusBadge status={result.status} />
+                      {categories.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {categories.map((category) => {
+                            const style = MATCH_CATEGORY_STYLES[category];
+                            return (
+                              <span
+                                key={category}
+                                className={`rounded border px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${style.classes}`}
+                                title={style.hint}
+                              >
+                                {style.short}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="max-w-[20rem] px-5 py-3 text-neutral-600">{result.remark}</td>
                   </tr>

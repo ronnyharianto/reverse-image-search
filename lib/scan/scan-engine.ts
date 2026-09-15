@@ -4,7 +4,7 @@ import { IMAGE_CONCURRENCY, MAX_PAGES, MAX_CRAWL_DEPTH, PAGE_CONCURRENCY } from 
 import { crawlSite } from "@/lib/crawler/crawler";
 import { processImageTask, type ImageTask } from "@/lib/scan/image-processor";
 import { getActiveProviderIds, getProviders } from "@/lib/reverse-search";
-import { createScanEntry, getScanEntry, publishEvent, type ScanEntry } from "@/lib/scan/scan-store";
+import { createScanEntry, getScanEntry, pruneScans, publishEvent, type ScanEntry } from "@/lib/scan/scan-store";
 
 /**
  * Scan engine orchestrator.
@@ -60,6 +60,9 @@ export async function startScan(
   targetUrl: string,
   options?: { enabledProviderIds?: string[] },
 ): Promise<string> {
+  // Enforce the in-memory bound before registering the new scan: drop the
+  // oldest finished scans so a long session cannot accumulate entries.
+  pruneScans();
   const scanId = randomUUID();
   const providers = getProviders(options?.enabledProviderIds);
   const activeIds = getActiveProviderIds(options?.enabledProviderIds);

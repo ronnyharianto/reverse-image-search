@@ -48,6 +48,11 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
           setProgress(snapshot.progress);
           setResults(snapshot.results);
           setSelected((prev) => (prev ? snapshot.results.find((r) => r.id === prev.id) ?? null : null));
+          // The scan is over — stop polling instead of looping forever.
+          if (snapshot.progress.state !== "RUNNING" && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = undefined;
+          }
         } catch {
           // ignore transient polling errors
         }

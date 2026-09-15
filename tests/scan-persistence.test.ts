@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   deleteScanSnapshot,
   loadScanSnapshot,
+  loadScanSnapshotWithTimestamp,
   saveScanSnapshot,
   targetUrlToFileName,
 } from "@/lib/scan/scan-persistence";
@@ -85,6 +86,27 @@ describe("save/load/deleteScanSnapshot", () => {
   it("returns null for unknown URLs and handles delete of missing files", async () => {
     expect(await loadScanSnapshot("https://never-scanned.test/")).toBeNull();
     expect(await deleteScanSnapshot("https://never-scanned.test/")).toBe(false);
+  });
+
+  it("returns the savedAt timestamp alongside the snapshot", async () => {
+    await saveScanSnapshot(makeSnapshot("https://example.com/", "scan-timed"));
+    const { snapshot, savedAt } = await loadScanSnapshotWithTimestamp("https://example.com/");
+    expect(snapshot?.progress.scanId).toBe("scan-timed");
+    expect(savedAt).toEqual(expect.any(String));
+    expect(Number.isNaN(new Date(savedAt!).getTime())).toBe(false);
+  });
+
+  it("tolerates legacy files without a savedAt timestamp", async () => {
+    const resultsDir = path.join(process.cwd(), "data", "results");
+    await mkdir(resultsDir, { recursive: true });
+    await writeFile(
+      path.join(resultsDir, "legacy.test.json"),
+      JSON.stringify({ snapshot: makeSnapshot("https://legacy.test/", "scan-legacy") }),
+      "utf8",
+    );
+    const { snapshot, savedAt } = await loadScanSnapshotWithTimestamp("https://legacy.test/");
+    expect(snapshot?.progress.scanId).toBe("scan-legacy");
+    expect(savedAt).toBeNull();
   });
 
   it("rejects corrupt snapshot files instead of throwing", async () => {

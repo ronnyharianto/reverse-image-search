@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { startScan } from "@/lib/scan/scan-engine";
 import { getConfiguredProviderIds } from "@/lib/reverse-search";
 import { validateUrlWithDns } from "@/lib/validation/url";
-import { loadScanSnapshot } from "@/lib/scan/scan-persistence";
+import { loadScanSnapshotWithTimestamp } from "@/lib/scan/scan-persistence";
 import { normalizeUrlForComparison } from "@/lib/validation/url";
 
 export const runtime = "nodejs";
@@ -75,12 +75,12 @@ export async function POST(request: Request) {
   // Unless the client explicitly asked for a fresh scan (fresh: true), stop
   // here and let the user choose: view the saved result or scan anyway.
   if (!fresh) {
-    const saved = await loadScanSnapshot(normalizedTarget);
+    const { snapshot: saved, savedAt } = await loadScanSnapshotWithTimestamp(normalizedTarget);
     if (saved) {
       return NextResponse.json(
         {
           warning: "saved-scan-exists",
-          message: `A saved result for ${validated.url} already exists (scanned ${formatDateTime(saved.progress.startedAt)}).`,
+          message: `A saved result for ${validated.url} already exists (saved ${formatDateTime(savedAt ?? saved.progress.startedAt)}).`,
           savedScanId: saved.progress.scanId,
           savedState: saved.progress.state,
         },

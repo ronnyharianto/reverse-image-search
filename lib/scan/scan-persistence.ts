@@ -55,13 +55,27 @@ export async function saveScanSnapshot(snapshot: ScanSnapshot): Promise<string> 
 
 /** Load the saved snapshot for a target URL, or null when none exists. */
 export async function loadScanSnapshot(targetUrl: string): Promise<ScanSnapshot | null> {
+  return (await loadScanSnapshotWithTimestamp(targetUrl)).snapshot;
+}
+
+/**
+ * Load a snapshot together with the `savedAt` timestamp recorded in its file.
+ * `savedAt` is null for legacy files that predate timestamping or on read
+ * errors; the snapshot itself is still returned when parseable.
+ */
+export async function loadScanSnapshotWithTimestamp(
+  targetUrl: string,
+): Promise<{ snapshot: ScanSnapshot | null; savedAt: string | null }> {
   try {
     const raw = await readFile(getFilePath(targetUrl), "utf8");
-    const payload = JSON.parse(raw) as { snapshot?: ScanSnapshot };
-    if (!payload.snapshot?.progress?.scanId) return null;
-    return payload.snapshot;
+    const payload = JSON.parse(raw) as { savedAt?: string; snapshot?: ScanSnapshot };
+    if (!payload.snapshot?.progress?.scanId) return { snapshot: null, savedAt: null };
+    return {
+      snapshot: payload.snapshot,
+      savedAt: typeof payload.savedAt === "string" ? payload.savedAt : null,
+    };
   } catch {
-    return null;
+    return { snapshot: null, savedAt: null };
   }
 }
 

@@ -1,5 +1,13 @@
 import { PROVIDER_LABELS, type ScanProgress } from "@/types/scanner";
 
+/** Locale date-time for display; "—" for missing/invalid values. */
+function formatDateTime(iso: string | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+}
+
 export default function ScanProgress({
   progress,
   onStop,
@@ -71,6 +79,20 @@ export default function ScanProgress({
           <dd className="text-2xl font-semibold text-neutral-900">{progress.imagesProcessed}</dd>
         </div>
       </dl>
+
+      <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-neutral-500">
+        <span>
+          Started: <time dateTime={progress.startedAt} className="font-medium text-neutral-700">{formatDateTime(progress.startedAt)}</time>
+        </span>
+        <span>
+          Finished: {""}
+          {progress.finishedAt ? (
+            <time dateTime={progress.finishedAt} className="font-medium text-neutral-700">{formatDateTime(progress.finishedAt)}</time>
+          ) : (
+            <span className="text-neutral-400">{running ? "in progress…" : "—"}</span>
+          )}
+        </span>
+      </p>
 
       {running && (progress.currentPage || progress.currentImage) ? (
         <div className="mt-4 space-y-1 text-sm text-neutral-600">

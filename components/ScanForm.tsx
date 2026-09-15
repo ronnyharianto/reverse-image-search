@@ -2,8 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import ProviderPicker, { type ProviderCatalogItem } from "@/components/ProviderPicker";
-import { loadStoredSelection, mergeStoredSelection, saveStoredSelection } from "@/lib/provider-selection";
+import ProviderPicker, {
+  type ProviderCatalogItem,
+} from "@/components/ProviderPicker";
+import {
+  loadStoredSelection,
+  mergeStoredSelection,
+  saveStoredSelection,
+} from "@/lib/provider-selection";
 
 interface SavedScanWarning {
   message: string;
@@ -17,12 +23,16 @@ export default function ScanForm() {
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderCatalogItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [savedWarning, setSavedWarning] = useState<SavedScanWarning | null>(null);
+  const [savedWarning, setSavedWarning] = useState<SavedScanWarning | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/providers")
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("failed"))))
+      .then((response) =>
+        response.ok ? response.json() : Promise.reject(new Error("failed")),
+      )
       .then((payload: { providers?: ProviderCatalogItem[] }) => {
         if (cancelled || !payload.providers) return;
         setProviders(payload.providers);
@@ -65,7 +75,9 @@ export default function ScanForm() {
         body: JSON.stringify({
           url,
           fresh,
-          ...(providers.length > 0 ? { providers: Array.from(selectedIds) } : {}),
+          ...(providers.length > 0
+            ? { providers: Array.from(selectedIds) }
+            : {}),
         }),
       });
       const payload = (await response.json()) as {
@@ -75,9 +87,16 @@ export default function ScanForm() {
         savedScanId?: string;
         error?: string;
       };
-      if (response.status === 409 && payload.warning === "saved-scan-exists" && payload.savedScanId) {
+      if (
+        response.status === 409 &&
+        payload.warning === "saved-scan-exists" &&
+        payload.savedScanId
+      ) {
         // A saved result for this URL exists — let the user decide.
-        setSavedWarning({ message: payload.message ?? "A saved result exists for this URL.", savedScanId: payload.savedScanId });
+        setSavedWarning({
+          message: payload.message ?? "A saved result exists for this URL.",
+          savedScanId: payload.savedScanId,
+        });
         return;
       }
       if (!response.ok || !payload.scanId) {
@@ -100,7 +119,10 @@ export default function ScanForm() {
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-xl space-y-4">
-      <label htmlFor="url" className="block text-sm font-medium text-neutral-700">
+      <label
+        htmlFor="url"
+        className="block text-sm font-medium text-neutral-700"
+      >
         Website URL
       </label>
       <input
@@ -126,18 +148,27 @@ export default function ScanForm() {
         {submitting ? "Starting scan…" : "Start Scan"}
       </button>
       {error ? (
-        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
           {error}
         </p>
       ) : null}
       {savedWarning ? (
-        <div role="alertdialog" aria-label="Saved scan found" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div
+          role="alertdialog"
+          aria-label="Saved scan found"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
           <p className="font-semibold">⚠ Saved result found</p>
           <p className="mt-1 leading-relaxed">{savedWarning.message}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex justify-around gap-2">
             <button
               type="button"
-              onClick={() => router.push(`/scan/${savedWarning.savedScanId}?saved=1`)}
+              onClick={() =>
+                router.push(`/scan/${savedWarning.savedScanId}?saved=1`)
+              }
               className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700"
             >
               Show last result
@@ -155,7 +186,7 @@ export default function ScanForm() {
             <button
               type="button"
               onClick={() => setSavedWarning(null)}
-              className="rounded-lg px-3 py-2 text-xs font-medium text-neutral-500 transition hover:text-neutral-700"
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-neutral-500 transition hover:text-neutral-700"
             >
               Cancel
             </button>
@@ -163,11 +194,16 @@ export default function ScanForm() {
         </div>
       ) : null}
       {providers.length > 0 ? (
-        <ProviderPicker providers={providers} selectedIds={selectedIds} onChange={handleSelectionChange} />
+        <ProviderPicker
+          providers={providers}
+          selectedIds={selectedIds}
+          onChange={handleSelectionChange}
+        />
       ) : null}
       <p className="text-xs leading-relaxed text-neutral-500">
-        This is a copyright-risk <strong>screening</strong> tool. It does not determine whether an image
-        legally infringes copyright. Only public http(s) websites can be scanned.
+        This is a copyright-risk <strong>screening</strong> tool. It does not
+        determine whether an image legally infringes copyright. Only public
+        http(s) websites can be scanned.
       </p>
     </form>
   );

@@ -8,17 +8,33 @@ import { normalizeUrlForComparison } from "@/lib/validation/url";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function formatDateTime(iso: string | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  });
+}
+
 export async function POST(request: Request) {
   let body: { url?: unknown; providers?: unknown; fresh?: unknown };
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Request body must be JSON with a `url` field." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Request body must be JSON with a `url` field." },
+      { status: 400 },
+    );
   }
 
   const rawUrl = typeof body.url === "string" ? body.url.trim() : "";
   if (!rawUrl) {
-    return NextResponse.json({ error: "Please enter a website URL." }, { status: 403 });
+    return NextResponse.json(
+      { error: "Please enter a website URL." },
+      { status: 403 },
+    );
   }
 
   const validated = await validateUrlWithDns(rawUrl);
@@ -64,7 +80,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           warning: "saved-scan-exists",
-          message: `A saved result for ${validated.url} already exists (scanned ${saved.progress.startedAt}).`,
+          message: `A saved result for ${validated.url} already exists (scanned ${formatDateTime(saved.progress.startedAt)}).`,
           savedScanId: saved.progress.scanId,
           savedState: saved.progress.state,
         },
@@ -78,6 +94,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ scanId }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `Could not start the scan: ${message}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Could not start the scan: ${message}` },
+      { status: 500 },
+    );
   }
 }

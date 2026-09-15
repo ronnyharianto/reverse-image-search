@@ -4,6 +4,7 @@ import { IMAGE_CONCURRENCY, MAX_PAGES, MAX_CRAWL_DEPTH, PAGE_CONCURRENCY } from 
 import { crawlSite } from "@/lib/crawler/crawler";
 import { processImageTask, type ImageTask } from "@/lib/scan/image-processor";
 import { getActiveProviderIds, getProviders } from "@/lib/reverse-search";
+import { saveScanSnapshot } from "@/lib/scan/scan-persistence";
 import { createScanEntry, getScanEntry, pruneScans, publishEvent, type ScanEntry } from "@/lib/scan/scan-store";
 
 /**
@@ -23,11 +24,24 @@ function isStopRequested(entry: ScanEntry): boolean {
   return entry.stopRequested;
 }
 
-function finishScan(entry: ScanEntry, state: ScanState): void {
+async function finishScan(entry: ScanEntry, state: ScanState): Promise<void> {
   entry.progress.state = state;
   entry.progress.finishedAt = new Date().toISOString();
   entry.progress.currentPage = undefined;
   entry.progress.currentImage = undefined;
+
+  if (state === "COMPLETED") {
+    try {
+      await saveScanSnapshot({ progress: { ...entry.progress }, results: entry.results });
+    } catch (error) {
+      console.error("[scan] auto-save failed:", error);
+      publishEvent(entry, {
+        type: "error",
+        message: "Scan completed, but the results could not be saved automatically.",
+      });
+    }
+  }
+
   publishEvent(entry, { type: "done", progress: { ...entry.progress } });
   entry.finish?.();
 }
@@ -72,7 +86,7 @@ export async function startScan(
   void runScan(entry, providers).catch((error) => {
     console.error("[scan] fatal scan error:", error);
     if (entry.progress.state === "RUNNING") {
-      finishScan(entry, "FAILED");
+      void finishScan(entry, "FAILED");
     }
   });
 
@@ -127,18 +141,18 @@ async function runScan(entry: ScanEntry, providers: ReturnType<typeof getProvide
     await Promise.all(workers);
 
     if (isStopRequested(entry)) {
-      finishScan(entry, "STOPPED");
+      await finishScan(entry, "STOPPED");
     } else if (crawlError) {
       entry.progress.currentPage = undefined;
-      finishScan(entry, "FAILED");
+      await finishScan(entry, "FAILED");
       publishEvent(entry, { type: "error", message: crawlError });
     } else {
-      finishScan(entry, "COMPLETED");
+      await finishScan(entry, "COMPLETED");
     }
   } catch (error) {
     console.error("[scan] runScan error:", error);
     if (entry.progress.state === "RUNNING") {
-      finishScan(entry, "FAILED");
+      await finishScan(entry, "FAILED");
     }
   }
 }

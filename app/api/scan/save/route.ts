@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getScanEntry } from "@/lib/scan/scan-store";
-import { saveScanSnapshot, targetUrlToFileName } from "@/lib/scan/scan-persistence";
+import { targetUrlToFileName } from "@/lib/scan/scan-persistence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,10 +8,9 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/scan/save — persist a finished scan as JSON.
  *
- * Body: { scanId }. Writes data/results/<target-url>.json and returns the
- * snapshot as a downloadable file (Content-Disposition attachment), so the
- * user both keeps a server-side record and can archive the file elsewhere.
- * Only finished scans can be saved.
+ * Body: { scanId }. Returns the snapshot as a downloadable JSON file
+ * (Content-Disposition attachment). Server-side persistence is handled by
+ * the scan engine when a scan completes.
  */
 export async function POST(request: Request) {
   let body: { scanId?: unknown };
@@ -35,12 +34,6 @@ export async function POST(request: Request) {
   }
 
   const snapshot = { progress: { ...entry.progress }, results: entry.results };
-  try {
-    await saveScanSnapshot(snapshot);
-  } catch {
-    return NextResponse.json({ error: "Could not write the results file." }, { status: 500 });
-  }
-
   const fileName = `${targetUrlToFileName(entry.progress.targetUrl)}.json`;
   return new Response(JSON.stringify({ savedAt: new Date().toISOString(), snapshot }, null, 2), {
     headers: {

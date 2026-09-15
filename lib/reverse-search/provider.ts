@@ -17,6 +17,8 @@ export interface ImageInput {
   sha256: string;
   /** Source page URL, when known (some providers require a source). */
   pageUrl?: string;
+  /** Public URL of the image itself, when known — used by URL-based search providers. */
+  imageUrl?: string;
 }
 
 export type ProviderResult =

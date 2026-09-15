@@ -1,13 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import ProviderPicker, { type ProviderCatalogItem } from "@/components/ProviderPicker";
 
 export default function ScanForm() {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [providers, setProviders] = useState<ProviderCatalogItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/providers")
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("failed"))))
+      .then((payload: { providers?: ProviderCatalogItem[] }) => {
+        if (cancelled || !payload.providers) return;
+        setProviders(payload.providers);
+        setSelectedIds(new Set(payload.providers.filter((p) => p.configured).map((p) => p.id)));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Picker stays hidden when the catalog is unavailable; scans then omit
+        // the provider field and use the server default (all configured ones).
+        setProviders([]);
+        setSelectedIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -17,7 +40,11 @@ export default function ScanForm() {
       const response = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        // Omit `providers` when the catalog never loaded → server-side default.
+        body: JSON.stringify({
+          url,
+          ...(providers.length > 0 ? { providers: Array.from(selectedIds) } : {}),
+        }),
       });
       const payload = (await response.json()) as { scanId?: string; error?: string };
       if (!response.ok || !payload.scanId) {
@@ -60,6 +87,9 @@ export default function ScanForm() {
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </p>
+      ) : null}
+      {providers.length > 0 ? (
+        <ProviderPicker providers={providers} selectedIds={selectedIds} onChange={setSelectedIds} />
       ) : null}
       <p className="text-xs leading-relaxed text-neutral-500">
         This is a copyright-risk <strong>screening</strong> tool. It does not determine whether an image

@@ -1,5 +1,11 @@
 import StatusBadge from "@/components/StatusBadge";
+import { PROVIDER_LABELS } from "@/types/scanner";
 import type { ImageScanResult } from "@/types/scanner";
+
+/** Friendly provider name for badges; falls back to the raw provider id. */
+function providerLabel(providerId: string): string {
+  return PROVIDER_LABELS[providerId] ?? providerId;
+}
 
 export default function ImageDetail({ result }: { result: ImageScanResult }) {
   return (
@@ -108,7 +114,7 @@ export default function ImageDetail({ result }: { result: ImageScanResult }) {
               {match.similarity !== undefined ? (
                 <p className="text-sm text-neutral-600">Similarity: {match.similarity}%</p>
               ) : null}
-              <p className="mt-1 text-xs text-neutral-500">via {match.providerId}</p>
+              <p className="mt-1 text-xs text-neutral-500">via {providerLabel(match.providerId)}</p>
             </li>
           ))}
         </ol>
@@ -121,6 +127,35 @@ export default function ImageDetail({ result }: { result: ImageScanResult }) {
               : "No reverse search results available."}
         </p>
       )}
+
+      {result.providerOutcomes && result.providerOutcomes.length > 0 ? (
+        <>
+          <h3 className="mt-6 mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            Provider Search Summary
+          </h3>
+          <ul className="space-y-2">
+            {result.providerOutcomes.map((outcome) => {
+              const label = providerLabel(outcome.providerId);
+              const badge = outcome.searched
+                ? outcome.status === "MATCH_FOUND"
+                  ? { text: `${outcome.matchCount} match${outcome.matchCount === 1 ? "" : "es"}`, classes: "border-amber-200 bg-amber-50 text-amber-900" }
+                  : { text: "No match", classes: "border-emerald-200 bg-emerald-50 text-emerald-800" }
+                : { text: "Failed", classes: "border-red-200 bg-red-50 text-red-700" };
+              return (
+                <li key={outcome.providerId} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-neutral-900">{label}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge.classes}`}>
+                      {badge.text}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-neutral-500">{outcome.remark}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
 
       <p className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
         Screening hint only: a match means the image exists elsewhere. It does not establish copyright

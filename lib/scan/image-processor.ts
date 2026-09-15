@@ -7,7 +7,8 @@ import { downloadImage } from "@/lib/image/downloader";
 import { inspectImage, isSupportedImageBytes } from "@/lib/image/metadata";
 import { fingerprintImage } from "@/lib/image/fingerprint";
 import { saveThumbnail } from "@/lib/image/thumbnails";
-import { getProviders, mergeProviderResults } from "@/lib/reverse-search";
+import { getProviders, mergeProviderResults, summarizeProviderOutcomes } from "@/lib/reverse-search";
+import type { ReverseImageSearchProvider } from "@/lib/reverse-search/provider";
 import type { ScanEntry } from "@/lib/scan/scan-store";
 import { publishEvent } from "@/lib/scan/scan-store";
 
@@ -135,13 +136,16 @@ export async function processImageTask(
         sha1: fingerprint.sha1,
         sha256: fingerprint.sha256,
         pageUrl,
+        imageUrl: finalImageUrl,
       };
 
-      const [commons, custom] = await Promise.all([
-        providers.commons.search(imageInput),
-        providers.custom ? providers.custom.search(imageInput) : Promise.resolve(null),
-      ]);
-      const merged = mergeProviderResults(commons, custom ?? undefined);
+      // Run every enabled provider concurrently and merge the results.
+      const providersList: ReverseImageSearchProvider[] = Object.values(providers).filter(
+        (provider): provider is ReverseImageSearchProvider => provider !== undefined,
+      );
+      const providerResults = await Promise.all(providersList.map((provider) => provider.search(imageInput)));
+      const merged = mergeProviderResults(...providerResults);
+      const providerOutcomes = summarizeProviderOutcomes(providersList, providerResults);
 
       const result: ImageScanResult = {
         id: newId(),
@@ -151,6 +155,7 @@ export async function processImageTask(
         remark: merged.remark,
         previewUrl,
         reverseSearchResults: merged.matches.length > 0 ? merged.matches : undefined,
+        providerOutcomes: providerOutcomes.length > 0 ? providerOutcomes : undefined,
         occurrences: [{ pageUrl, imageUrl: finalImageUrl }],
         width: inspection.width,
         height: inspection.height,
@@ -212,5 +217,6 @@ function cloneResult(result: ImageScanResult): ImageScanResult {
     ...result,
     occurrences: result.occurrences.map((o) => ({ ...o })),
     reverseSearchResults: result.reverseSearchResults?.map((m) => ({ ...m })),
+    providerOutcomes: result.providerOutcomes?.map((o) => ({ ...o })),
   };
 }

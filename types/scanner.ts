@@ -32,6 +32,19 @@ export interface ImageOccurrence {
   imageUrl: string;
 }
 
+/** How one configured provider fared for one image (shown in the detail panel). */
+export interface ProviderSearchOutcome {
+  /** Provider id, e.g. "commons". */
+  providerId: string;
+  /** True when the provider completed a real search (regardless of match count). */
+  searched: boolean;
+  status: "NO_MATCH" | "MATCH_FOUND" | "FAILED";
+  /** Matches contributed by this provider. */
+  matchCount: number;
+  /** Short provider remark, e.g. error detail. */
+  remark: string;
+}
+
 /** A single image occurrence row shown in the result list. */
 export interface ImageScanResult {
   id: string;
@@ -46,6 +59,8 @@ export interface ImageScanResult {
   previewUrl?: string;
   /** Sources returned by reverse image search, when any. */
   reverseSearchResults?: MatchSource[];
+  /** Per-provider search outcomes for this image, in the order providers ran. */
+  providerOutcomes?: ProviderSearchOutcome[];
   /** All pages where the identical image file was found. */
   occurrences: ImageOccurrence[];
   width?: number;
@@ -97,6 +112,14 @@ export const STATUS_STYLES: Record<ImageStatus, string> = {
   MATCH_FOUND: "bg-amber-100 text-amber-900 border-amber-200",
   REQUIRES_REVIEW: "bg-violet-100 text-violet-800 border-violet-200",
   FAILED: "bg-red-100 text-red-800 border-red-200",
+};
+
+/** Friendly display names for reverse-search provider ids. */
+export const PROVIDER_LABELS: Record<string, string> = {
+  commons: "Wikimedia Commons",
+  serpapi: "Google Lens (SerpAPI)",
+  "google-vision": "Google Cloud Vision",
+  custom: "Custom endpoint",
 };
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB per image

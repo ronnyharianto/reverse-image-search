@@ -85,6 +85,13 @@ Website URL
 
 The user enters the URL of the company profile or website to scan.
 
+The page may also offer an optional **reverse image search provider selection** (see §8):
+
+- Configured providers can be toggled on/off for the upcoming scan.
+- Providers whose credentials are missing are shown but locked, with a
+  `Not configured` badge naming the environment variable required to enable them.
+- If no selection is made, the system defaults to running every configured provider.
+
 ---
 
 # 5. Website Crawling
@@ -199,7 +206,31 @@ interface ReverseImageSearchProvider {
 }
 ```
 
-The exact reverse image search provider can be selected during implementation based on available free/local-compatible options.
+The system ships a set of pluggable providers behind this interface. A provider is either
+**configured** (its credentials are present) or **not configured**; only configured providers
+can ever run.
+
+| Provider id | Name | Method | Enabled by |
+| ----------- | ---- | ------ | ---------- |
+| `commons` | Wikimedia Commons | Exact-content SHA-1 lookup via the public MediaWiki API. Free, always available. | always configured |
+| `serpapi` | Google Lens (SerpAPI) | Web-wide reverse image search by the image's public URL. | `SERPAPI_API_KEY` |
+| `google-vision` | Google Cloud Vision | Official Web Detection; uploads the image bytes (base64). | `GOOGLE_VISION_API_KEY` |
+| `custom` | Custom endpoint | User-provided reverse-search HTTP endpoint (bring your own key). | `REVERSE_SEARCH_CUSTOM_URL` |
+
+Provider selection rules:
+
+1. The UI can query the provider catalog, which lists every provider with its
+   `configured` state and required environment variables (`GET /api/providers`).
+2. A scan request may specify which providers to use. The API must reject requests
+   naming unconfigured providers instead of silently skipping them.
+3. When no selection is specified, every configured provider runs.
+4. When multiple providers run, their results are merged: `MATCH_FOUND` wins over
+   `NO_MATCH`; a `FAILED` provider only surfaces when every provider failed.
+5. If no provider ran for an image, the image is marked `REQUIRES_REVIEW`. The system
+   must never fake a reverse image search result.
+
+Paid providers are strictly opt-in: the basic application must remain fully usable with
+only the free, keyless provider.
 
 The system must not claim that an image infringes copyright solely because a match was found.
 
@@ -275,11 +306,29 @@ Reverse Search Results
 1. Example Stock Website
    URL: https://example.com/image/123
    Similarity: 95%
+   via Google Lens (SerpAPI)
 
 2. Another Website
    URL: https://another-site.com/photo
    Similarity: 91%
+   via Wikimedia Commons
 ```
+
+When multiple providers are enabled, the detail panel should also record which providers
+ran for the image and what each one found:
+
+```text
+Provider Search Summary
+
+Wikimedia Commons        2 matches
+   Matching image found on Wikimedia Commons.
+
+Google Lens (SerpAPI)    No match
+   No matching image found on Google Lens.
+```
+
+A provider that errored is shown as `Failed` with its reason; providers that did not run
+for the image are omitted.
 
 ---
 
@@ -481,14 +530,17 @@ copyright-image-scanner/
 │   ├── scan/
 │   │   └── page.tsx
 │   └── api/
-│       └── scan/
+│       ├── scan/
+│       │   └── route.ts
+│       └── providers/
 │           └── route.ts
 │
 ├── components/
 │   ├── ScanForm.tsx
 │   ├── ScanProgress.tsx
 │   ├── ImageResultList.tsx
-│   └── ImageDetail.tsx
+│   ├── ImageDetail.tsx
+│   └── ProviderPicker.tsx
 │
 ├── lib/
 │   ├── crawler/
@@ -535,6 +587,11 @@ The application is complete when all of the following work:
 18. Python is not required.
 19. No paid service is required for the basic application.
 20. The application does not claim that an image is legally infringing copyright.
+21. User can see the list of available reverse image search providers with their
+    configured state before starting a scan.
+22. User can enable/disable individual configured providers per scan.
+23. Providers without credentials are shown as `Not configured` and cannot be selected;
+    the API rejects scan requests naming them.
 
 ---
 

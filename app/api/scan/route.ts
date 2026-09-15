@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { startScan } from "@/lib/scan/scan-engine";
+import { getConfiguredProviderIds } from "@/lib/reverse-search";
 import { validateUrlWithDns } from "@/lib/validation/url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  let body: { url?: unknown };
+  let body: { url?: unknown; providers?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -23,8 +24,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
 
+  // Optional provider selection: default = every configured provider runs.
+  let enabledProviderIds: string[] | undefined;
+  if (body.providers !== undefined) {
+    if (
+      !Array.isArray(body.providers) ||
+      body.providers.length === 0 ||
+      !body.providers.every((id) => typeof id === "string")
+    ) {
+      return NextResponse.json(
+        { error: "`providers` must be a non-empty array of provider ids." },
+        { status: 400 },
+      );
+    }
+    const configured = getConfiguredProviderIds();
+    const requested = body.providers as string[];
+    const unavailable = requested.filter((id) => !configured.has(id as never));
+    if (unavailable.length > 0) {
+      return NextResponse.json(
+        { error: `Provider(s) not configured: ${unavailable.join(", ")}` },
+        { status: 400 },
+      );
+    }
+    enabledProviderIds = requested;
+  }
+
   try {
-    const scanId = await startScan(validated.url);
+    const scanId = await startScan(validated.url, { enabledProviderIds });
     return NextResponse.json({ scanId }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

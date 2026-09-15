@@ -56,10 +56,13 @@ async function imageWorker(
   }
 }
 
-export async function startScan(targetUrl: string): Promise<string> {
+export async function startScan(
+  targetUrl: string,
+  options?: { enabledProviderIds?: string[] },
+): Promise<string> {
   const scanId = randomUUID();
   const entry = createScanEntry(scanId, targetUrl);
-  const providers = getProviders();
+  const providers = getProviders(options?.enabledProviderIds);
 
   // Fire-and-forget: API returns the scanId immediately, progress streams via SSE.
   void runScan(entry, providers).catch((error) => {

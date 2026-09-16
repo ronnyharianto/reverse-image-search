@@ -100,9 +100,8 @@ export async function rerunFailedProviderLookups(
       const rerun = rerunById.get(provider.id);
       if (rerun) return rerun;
       const previous = previousById.get(provider.id);
-      return previous?.searched
-        ? { searched: true, status: previous.status, remark: previous.remark, matches: [] }
-        : undefined;
+      if (!previous?.searched || previous.status === "FAILED") return undefined;
+      return { searched: true, status: previous.status, remark: previous.remark, matches: [] };
     })
     .filter((r): r is ProviderResult => r !== undefined);
   const merged = mergeProviderResults(...allResults);
@@ -175,13 +174,12 @@ export async function retryImageLookup(scanId: string, resultId: string): Promis
 
     // Providers for this scan, in run order — rebuilt from the persisted
     // selection so the retried search behaves like the original scan.
+    // An empty set (e.g. a provider was unconfigured since the scan) is a
+    // no-op: the row is committed unchanged and the snapshot is refreshed.
     const providerSet = getProviders(entry.progress.providers);
     const providers = Object.values(providerSet).filter(
       (provider): provider is ReverseImageSearchProvider => provider !== undefined,
     );
-    if (providers.length === 0) {
-      return { ok: false, error: "No reverse search provider is configured for this scan." };
-    }
 
     await rerunFailedProviderLookups(imageInput, draft, providers);
 

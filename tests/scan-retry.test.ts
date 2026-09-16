@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rm, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
+import { rm, mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { ImageInput, ProviderResult, ReverseImageSearchProvider } from "@/lib/reverse-search/provider";
 import type { ImageScanResult } from "@/types/scanner";
@@ -63,6 +63,7 @@ function makeDraft(): ImageScanResult {
       { providerId: "serpapi", searched: false, status: "FAILED", matchCount: 0, remark: "Google Lens request failed (HTTP 500)." },
     ],
     occurrences: [{ pageUrl: "https://example.com/about", imageUrl: "https://example.com/images/team.jpg" }],
+    sha256: "b".repeat(64),
   };
 }
 
@@ -282,7 +283,13 @@ describe("retryImageLookup", () => {
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.savedFilePath).toBeNull();
 
-    const files = await readdir(path.join(SANDBOX, "data", "results"));
+    // Nothing was saved, so data/results may not exist at all.
+    let files: string[] = [];
+    try {
+      files = await readdir(path.join(SANDBOX, "data", "results"));
+    } catch {
+      files = [];
+    }
     expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(0);
   });
 

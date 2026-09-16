@@ -97,6 +97,8 @@ describe("provider registry", () => {
 
   it("resolves active provider ids enabled, configured and in run order", () => {
     vi.stubEnv("SERPAPI_API_KEY", "k1");
+    // Stub empty so the test is independent of ambient env vars.
+    vi.stubEnv("GOOGLE_VISION_API_KEY", "");
     // Run order follows PROVIDER_IDS: commons, serpapi, google-vision, custom.
     expect(getActiveProviderIds(["serpapi", "commons"])).toEqual(["commons", "serpapi"]);
     expect(getActiveProviderIds(["commons", "google-vision"])).toEqual(["commons"]);

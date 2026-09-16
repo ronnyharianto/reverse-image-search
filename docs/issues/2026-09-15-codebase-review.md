@@ -8,7 +8,11 @@ to the tree at the current HEAD (post `eeb892a` plus the timestamp display chang
 
 ## 1. Race in the Commons rate limiter distorts pacing
 
-**Severity: Medium** · `lib/reverse-search/commons.ts:38-45`
+**Severity: Medium** · `lib/reverse-search/commons.ts:38-45` · **Status: FIXED**
+(2026-09-15 — replaced with `SequentialRequestQueue`
+(`lib/reverse-search/request-queue.ts`); Commons API calls are chained off a
+shared promise tail so only one request is in flight and consecutive starts
+are ≥ 250 ms apart, verified by `tests/request-queue.test.ts`.)
 
 `rateLimit()` reads `lastRequestAt`, sleeps, then unconditionally sets
 `lastRequestAt = Date.now()` when the sleep finishes. With the 5 concurrent

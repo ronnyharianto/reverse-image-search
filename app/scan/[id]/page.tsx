@@ -113,8 +113,9 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
           setConnectionError(payload?.error ?? "Retry failed. Please try again.");
           return;
         }
-        applyResult(payload.result);
-        setSelected((prev) => (prev && prev.id === payload.result!.id ? payload.result : prev));
+        const refreshed = payload.result;
+        applyResult(refreshed);
+        setSelected((prev) => (prev && prev.id === refreshed.id ? refreshed : prev));
         setConnectionError(null);
       } catch {
         setConnectionError("Retry failed. Please try again.");

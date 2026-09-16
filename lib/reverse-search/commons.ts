@@ -1,5 +1,6 @@
 import type { MatchSource } from "@/types/scanner";
 import type { ImageInput, ProviderResult, ReverseImageSearchProvider } from "@/lib/reverse-search/provider";
+import { SequentialRequestQueue } from "@/lib/reverse-search/request-queue";
 
 /**
  * Wikimedia Commons provider — a genuine reverse image lookup.
@@ -17,7 +18,7 @@ import type { ImageInput, ProviderResult, ReverseImageSearchProvider } from "@/l
 
 const API_ENDPOINT = "https://commons.wikimedia.org/w/api.php";
 const REQUEST_TIMEOUT_MS = 15_000;
-const MIN_REQUEST_INTERVAL_MS = 250; // ≤ 4 requests/second
+export const MIN_REQUEST_INTERVAL_MS = 250; // ≤ 4 requests/second
 
 interface MediaWikiAllImagesItem {
   title?: string;
@@ -36,20 +37,22 @@ interface MediaWikiResponse {
   error?: { info?: string; code?: string };
 }
 
-/** Module-level sequential rate limiter shared by all Commons lookups. */
-let lastRequestAt = 0;
-async function rateLimit(): Promise<void> {
-  const now = Date.now();
-  const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - now;
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastRequestAt = Date.now();
-}
+/**
+ * Sequential request queue shared by all Commons lookups, across scans and
+ * provider instances: exactly one API request in flight at a time, with at
+ * least MIN_REQUEST_INTERVAL_MS between consecutive request starts. This
+ * replaces an earlier timestamp-based limiter that could fire concurrent
+ * requests on the same tick under the image workers' concurrency.
+ */
+const commonsRequestQueue = new SequentialRequestQueue(MIN_REQUEST_INTERVAL_MS);
 
 export class WikimediaCommonsProvider implements ReverseImageSearchProvider {
   readonly id = "commons";
   readonly displayName = "Wikimedia Commons";
   readonly description =
-    "Exact-content hash lookup (SHA-1) across Wikimedia Commons via the public MediaWiki API. Free, no API key.";  async search(image: ImageInput): Promise<ProviderResult> {
+    "Exact-content hash lookup (SHA-1) across Wikimedia Commons via the public MediaWiki API. Free, no API key.";
+
+  async search(image: ImageInput): Promise<ProviderResult> {
     try {
       const response = await fetchWithRetry(image.sha1.toLowerCase());
       if (!response.ok) {
@@ -109,8 +112,9 @@ export class WikimediaCommonsProvider implements ReverseImageSearchProvider {
 }
 
 /**
- * Fetch the Commons API with a module-level rate limit and up to 3 attempts,
- * honoring Retry-After on 429s. Returns the last Response on final failure.
+ * Fetch the Commons API through the shared sequential request queue with up
+ * to 3 attempts, honoring Retry-After on 429s. Returns the last Response on
+ * final failure.
  */
 async function fetchWithRetry(sha1: string, maxAttempts = 3): Promise<Response> {
   const params = new URLSearchParams({
@@ -124,14 +128,15 @@ async function fetchWithRetry(sha1: string, maxAttempts = 3): Promise<Response> 
   const requestUrl = `${API_ENDPOINT}?${params.toString()}`;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    await rateLimit();
-    const response = await fetch(requestUrl, {
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      headers: {
-        "User-Agent": "CopyrightImageScanner/0.1 (local copyright screening tool)",
-        Accept: "application/json",
-      },
-    });
+    const response = await commonsRequestQueue.run(() =>
+      fetch(requestUrl, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        headers: {
+          "User-Agent": "CopyrightImageScanner/0.1 (local copyright screening tool)",
+          Accept: "application/json",
+        },
+      }),
+    );
     if (response.ok) return response;
     if (response.status !== 429 || attempt === maxAttempts) return response;
     const retryAfter = Number(response.headers.get("retry-after") ?? "0");

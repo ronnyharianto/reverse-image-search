@@ -1,14 +1,16 @@
 # Copyright Image Scanner
 
+> **⚠️ This tool does NOT decide whether an image is safe to use — and it is not a legal
+> authority.** It is a screening aid that flags images worth a closer look. **Every result still
+> requires manual verification**: open the reported sources and check the license and attribution
+> terms yourself. A match is a lead, not proof of infringement; a "No Match" is not proof that an
+> image is copyright-free.
+
 A local web application for **copyright-risk screening** of images on company profile websites.
 
 Enter a website URL → the app crawls the site's pages (Playwright), extracts images, downloads
 and validates them (Sharp), and performs **real reverse image search** per image. Results stream
 into the UI live while the scan is still running.
-
-> **This is a screening tool, not a legal authority.** A match means an image exists elsewhere —
-> it does **not** establish copyright ownership or infringement. A "No Match" result does **not**
-> mean an image is copyright-free.
 
 ## Getting started
 
@@ -48,8 +50,10 @@ to open the **detail panel**, which shows:
 - Image preview, dimensions, file size and MIME type.
 - Status and remark.
 - All pages the image occurs on (identical images are deduplicated — one row, many occurrences).
-- **Reverse-search results**: the matching source(s) found, each with a link to the source page
-  and the provider that produced it.
+- **Reverse-search results**: the matching source(s) found, each with a link to the source page,
+  the provider that produced it, and a **category badge** (commercial stock / free media /
+  social / other — see *Match categories* below). When a row has matches in more than one
+  category, filter chips let you show only one kind.
 - **Provider search summary**: which configured providers ran for this image and what each
   found (match count, "No match", or "Failed" with the reason).
 
@@ -65,14 +69,31 @@ Wikimedia Commons). To check the license:
 (stock-site receipts, in-house confirmation, or a manual reverse search in Google Images /
 Bing Visual Search).
 
-### 5. Notes and limits
+### 5. Retry failed lookups
+
+If a provider lookup failed for an image (network or quota error), the row shows a
+**Retry lookup** button once the scan has finished (in the result list and the detail panel).
+Only the failed providers re-run — successful ones keep their earlier result, so no extra quota
+is spent. Retries work both on live scans and on saved reports (see below).
+
+### 6. Save and revisit results
+
+- When a scan has finished, **Save results (JSON)** downloads the report and persists it under
+  `data/results/<domain>.json` (gitignored).
+- Scanning the same URL again warns that a saved result exists: choose **Show last result** to
+  open it read-only, or **Scan fresh** to re-run the scan.
+- The saved view is read-only; press **Edit** in its banner to enable retries. A retry on a saved
+  report runs against the persisted JSON and writes the refreshed row back to the file — so it
+  works even after the dev server was restarted.
+
+### 7. Notes and limits
 
 - The crawler follows links **within the target domain only** (up to 100 pages, depth 3,
   3 concurrent pages / 5 concurrent images). External image URLs are still processed.
 - Identical images (same SHA-256) are downloaded and searched only once.
 - Supported image formats: JPEG, PNG, WebP, GIF, AVIF (up to 10 MB each).
-- Scans are kept in memory: a server restart clears them. Thumbnails are cached under
-  `data/images/` for the session.
+- Scans live in memory: a server restart clears them, but saved reports under `data/results/`
+  remain and stay retryable. Thumbnails are cached under `data/images/` for the session.
 
 ## What it does
 
@@ -89,7 +110,8 @@ Bing Visual Search).
    - **Google Cloud Vision** (opt-in): official Web Detection, uploads the image bytes.
    - **Custom endpoint** (opt-in): bring your own key.
 5. **Shows results incrementally** over Server-Sent Events: status, remark, thumbnail, page URL,
-   image URL — with a detail panel listing matching sources and all pages an image occurs on.
+   image URL — with a detail panel listing matching sources (categorized by source kind) and all
+   pages an image occurs on.
 
 Identical images (same SHA-256) are searched only once; every page occurrence is still listed.
 
@@ -102,6 +124,21 @@ Identical images (same SHA-256) are searched only once; every page occurrence is
 | `MATCH_FOUND`     | A potentially matching image/source was found.                   |
 | `REQUIRES_REVIEW` | No provider searched this image — manual verification required.  |
 | `FAILED`          | Download, validation or search failed; the scan continues.       |
+
+## Match categories
+
+Every reverse-search match is labeled by the *kind of domain* hosting it — a prioritization hint
+for your manual review, **never a verdict**:
+
+| Category | Short | Meaning |
+| --- | --- | --- |
+| Commercial stock | Stock | Likely sold commercially — a license is probably required. Verify, purchase, or replace. |
+| Free media library | Free | Known free-license library — verify the exact file page and follow its attribution terms. |
+| Social platform | Social | User-uploaded — the platform is not the rights holder; find the original source. |
+| Other source | Other | Another web page using the image — useful to gauge spread, not license evidence. |
+
+Categories are derived from the match's domain (see `lib/match-categorization.ts`) and shown as
+badges in the result list and detail panel; filter chips appear when a row matches multiple kinds.
 
 ## Providers
 
@@ -168,5 +205,6 @@ npm run lint
 npm run build
 ```
 
-Scan thumbnails are written to `data/images/` (gitignored). Scans live in memory and are lost on
-server restart — this is a local utility, by design.
+Scan thumbnails are written to `data/images/` and scan reports to `data/results/` (both
+ gitignored). Scans live in memory and are lost on server restart — saved reports remain on disk
+ and stay retryable. This is a local utility, by design.

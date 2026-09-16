@@ -12,10 +12,22 @@ export default function HomePage() {
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
           <ScanForm />
         </div>
-        <p className="mt-6 text-xs leading-relaxed text-neutral-400">
-          Results are screening hints only — they never constitute a legal conclusion. A
-          &quot;No Match&quot; result does not mean an image is copyright-free.
-        </p>
+        <div
+          role="note"
+          aria-label="Manual verification disclaimer"
+          className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-left"
+        >
+          <p className="text-sm font-bold text-amber-900">
+            ⚠️ This tool does not decide whether an image is safe to use.
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-900">
+            It is a screening aid, not a legal authority — every result still
+            requires <strong>manual verification</strong>: open the reported
+            sources and check the license and attribution terms yourself. A
+            match is a lead, not proof of infringement; a &quot;No Match&quot;
+            is not proof that an image is copyright-free.
+          </p>
+        </div>
       </div>
     </main>
   );

@@ -241,6 +241,20 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
         )}
       </div>
 
+      {/* Screening-tool disclaimer: must be visible on every scan view. */}
+      <div
+        role="note"
+        aria-label="Manual verification disclaimer"
+        className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      >
+        <strong className="font-bold">
+          ⚠️ This tool does not decide whether an image is safe to use.
+        </strong>{" "}
+        It is a screening aid, not a legal authority — every result still
+        requires <strong>manual verification</strong>: open the reported
+        sources and check the license and attribution terms yourself.
+      </div>
+
       {connectionError ? (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {connectionError}

@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import { MATCH_CATEGORY_STYLES, summarizeMatchCategories } from "@/lib/match-categorization";
-import { hasFailedProviderLookup, type ImageScanResult } from "@/types/scanner";
+import { hasFailedProviderLookup, STATUS_LABELS, type ImageScanResult, type ImageStatus } from "@/types/scanner";
+
+/** Canonical status display order for the filter dropdown. */
+const STATUS_ORDER: readonly ImageStatus[] = [
+  "PROCESSING",
+  "NO_MATCH",
+  "MATCH_FOUND",
+  "REQUIRES_REVIEW",
+  "FAILED",
+];
 
 function truncateUrl(url: string, max = 60): string {
   return url.length > max ? `${url.slice(0, max - 1)}…` : url;
@@ -75,10 +84,19 @@ export default function ImageResultList({
   /** True while the scan is running — retries must wait for completion. */
   retryDisabled?: boolean;
 }) {
-  const [onlyFlagged, setOnlyFlagged] = useState(false);
-  const visible = onlyFlagged
-    ? results.filter((r) => r.status === "MATCH_FOUND" || r.status === "REQUIRES_REVIEW")
-    : results;
+  const [statusFilter, setStatusFilter] = useState<ImageStatus | "ALL">("ALL");
+
+  // Statuses present in the results, with row counts — drives the dropdown.
+  const statusCounts = useMemo(() => {
+    const counts = new Map<ImageStatus, number>();
+    for (const result of results) {
+      counts.set(result.status, (counts.get(result.status) ?? 0) + 1);
+    }
+    return counts;
+  }, [results]);
+
+  const visible =
+    statusFilter === "ALL" ? results : results.filter((r) => r.status === statusFilter);
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white shadow-sm">
@@ -86,20 +104,28 @@ export default function ImageResultList({
         <h2 className="text-lg font-semibold text-neutral-900">
           Scan Results <span className="text-sm font-normal text-neutral-500">({results.length})</span>
         </h2>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-600">
-          <input
-            type="checkbox"
-            checked={onlyFlagged}
-            onChange={(event) => setOnlyFlagged(event.target.checked)}
-            className="h-4 w-4 rounded border-neutral-300"
-          />
-          Show flagged only
+        <label className="flex items-center gap-2 text-sm text-neutral-600">
+          Status
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as ImageStatus | "ALL")}
+            className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+          >
+            <option value="ALL">All ({results.length})</option>
+            {STATUS_ORDER.filter((status) => statusCounts.has(status)).map((status) => (
+              <option key={status} value={status}>
+                {STATUS_LABELS[status]} ({statusCounts.get(status)})
+              </option>
+            ))}
+          </select>
         </label>
       </header>
 
       {visible.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-neutral-500">
-          {results.length === 0 ? "Waiting for the first images to be processed…" : "No flagged images."}
+          {results.length === 0
+            ? "Waiting for the first images to be processed…"
+            : "No images with this status."}
         </p>
       ) : (
         <div className="overflow-x-auto">

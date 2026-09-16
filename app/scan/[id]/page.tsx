@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import ImageDetail from "@/components/ImageDetail";
 import ImageResultList from "@/components/ImageResultList";
 import MatchCategorySummary from "@/components/MatchCategorySummary";
@@ -9,6 +10,7 @@ import ScanProgress from "@/components/ScanProgress";
 import type { ImageScanResult, ScanProgress as ProgressData, ScanEvent, ScanSnapshot } from "@/types/scanner";
 
 export default function ScanPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
   const [scanId, setScanId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [results, setResults] = useState<ImageScanResult[]>([]);
@@ -16,6 +18,8 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  // True after the user left the read-only saved view via the Edit button.
+  const [savedViewDismissed, setSavedViewDismissed] = useState(false);
 
   useEffect(() => {
     params.then((p) => setScanId(p.id));
@@ -44,6 +48,13 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
       pollTimer = setInterval(async () => {
         try {
           const response = await fetch(`/api/scan/${scanId}`);
+          if (response.status === 404) {
+            // The live scan is gone (server restart or prune) — stop polling
+            // immediately; the saved-snapshot fallback takes over below.
+            clearInterval(pollTimer);
+            pollTimer = undefined;
+            return;
+          }
           if (!response.ok) return;
           const snapshot = (await response.json()) as ScanSnapshot;
           setProgress(snapshot.progress);
@@ -130,6 +141,15 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
   // rather than an effect, so no extra state or render pass is needed.
   const savedView = scanId !== null && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("saved") === "1";
 
+  // Leave the read-only saved view: drop ?saved=1 from the URL (so a reload
+  // keeps the editable mode) and flip local state immediately, in case the
+  // soft navigation does not re-render this component.
+  const discardSavedView = useCallback(() => {
+    if (!scanId) return;
+    setSavedViewDismissed(true);
+    router.replace(`/scan/${scanId}`, { scroll: false });
+  }, [router, scanId]);
+
   // Saved-snapshot fallback: when the URL carries ?saved=1 (opened from the
   // "Show last result" action) or the live scan is gone (server restarted),
   // load the persisted JSON and render it read-only.
@@ -141,11 +161,23 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
     const timer = setTimeout(() => {
       if (cancelled || progress) return;
       fetch(`/api/scan/${scanId}/saved`)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((payload: { snapshot?: { progress?: ProgressData; results?: ImageScanResult[] } } | null) => {
-          if (cancelled || !payload?.snapshot?.progress || progress) return;
-          setProgress(payload.snapshot.progress);
-          setResults(payload.snapshot.results ?? []);
+        .then(async (response) => {
+          if (response.status === 404) return null;
+          return response.ok ? ((await response.json()) as { snapshot?: { progress?: ProgressData; results?: ImageScanResult[] } } | null) : null;
+        })
+        .then((payload) => {
+          if (cancelled || progress) return;
+          if (payload?.snapshot?.progress) {
+            setProgress(payload.snapshot.progress);
+            setResults(payload.snapshot.results ?? []);
+            return;
+          }
+          // No live scan (the poller got a 404 or SSE failed) and no saved
+          // snapshot either — say so instead of hanging on "Connecting…".
+          setConnectionError(
+            "This scan is no longer available on the server (it may have restarted), " +
+              "and no saved result was found for it. Start a new scan from the home page.",
+          );
         })
         .catch(() => undefined);
     }, wantsSaved ? 0 : 1500);
@@ -155,7 +187,7 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [scanId, progress]);
 
-  const isSavedView = savedView && progress !== null && progress.state !== "RUNNING";
+  const isSavedView = savedView && !savedViewDismissed && progress !== null && progress.state !== "RUNNING";
 
   // Persist the finished scan as JSON under data/results/ and download it.
   const handleSave = useCallback(async () => {
@@ -218,10 +250,20 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
       {progress ? (
         <div className="space-y-6">
           {isSavedView ? (
-            <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-              Viewing a saved result (loaded from <code>data/results/</code>). Start a new scan from the home page
-              to re-check this website.
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+              <p>
+                Viewing a saved result (loaded from <code>data/results/</code>). Start a new scan from the home page
+                to re-check this website.
+              </p>
+              <button
+                type="button"
+                onClick={discardSavedView}
+                title="Exit the read-only view to retry failed provider lookups."
+                className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 transition hover:bg-blue-100"
+              >
+                Edit
+              </button>
+            </div>
           ) : null}
           <ScanProgress progress={progress} onStop={isSavedView ? undefined : handleStop} />
           <MatchCategorySummary results={results} />
@@ -253,6 +295,10 @@ export default function ScanPage({ params }: { params: Promise<{ id: string }> }
               ) : null}
             </aside>
           </div>
+        </div>
+      ) : connectionError ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center text-amber-800">
+          Scan unavailable — see the message above.
         </div>
       ) : (
         <div className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-neutral-500">

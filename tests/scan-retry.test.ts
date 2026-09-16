@@ -22,7 +22,7 @@ vi.mock("@/lib/reverse-search", async (importOriginal) => {
 });
 
 import { rerunFailedProviderLookups, retryImageLookup } from "@/lib/scan/retry";
-import { createScanEntry } from "@/lib/scan/scan-store";
+import { createScanEntry, getScanEntry, pruneScans } from "@/lib/scan/scan-store";
 import { saveScanSnapshot } from "@/lib/scan/scan-persistence";
 
 const ORIGINAL_CWD = process.cwd();
@@ -293,6 +293,18 @@ describe("retryImageLookup", () => {
     expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(0);
   });
 
+  it("reports mode 'live' when the scan is still in memory", async () => {
+    const scanId = "retry-mode-live";
+    const entry = createScanEntry(scanId, "https://example.com/");
+    entry.progress.state = "COMPLETED";
+    entry.results.push(makeDraft());
+    mocks.getProviders.mockReturnValue({});
+
+    const outcome = await retryImageLookup(scanId, "result-1");
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.mode).toBe("live");
+  });
+
   it("runs one retry at a time per result row", async () => {
     const scanId = "retry-concurrent";
     const entry = createScanEntry(scanId, "https://example.com/");
@@ -310,5 +322,72 @@ describe("retryImageLookup", () => {
     expect(first.ok && second.ok).toBe(false);
     if (!first.ok) expect(first.error).toContain("already in progress");
     if (!second.ok) expect(second.error).toContain("already in progress");
+  });
+
+  describe("snapshot fallback (live scan gone)", () => {
+    /** Evict finished scans so getScanEntry(scanId) is undefined. */
+    function evictLiveEntry(): void {
+      createScanEntry("__sentinel__", "https://sentinel.test"); // stays RUNNING
+      pruneScans(1);
+    }
+
+    it("retries from the saved snapshot when the live scan no longer exists", async () => {
+      const scanId = "retry-snapshot-1";
+      const entry = createScanEntry(scanId, "https://example.com/");
+      entry.progress.state = "COMPLETED";
+      entry.progress.providers = ["serpapi"];
+      entry.results.push(makeDraft());
+      await saveScanSnapshot({ progress: { ...entry.progress }, results: entry.results });
+
+      mocks.getProviders.mockReturnValue({
+        serpapi: makeProvider("serpapi", {
+          searched: true,
+          status: "MATCH_FOUND",
+          remark: "Potential match found on Google Lens (1 visual match source).",
+          matches: [{ sourceName: "Google Lens — Stock", sourceUrl: "https://stock.test/photos/1", providerId: "serpapi" }],
+        }),
+      });
+
+      evictLiveEntry();
+      expect(getScanEntry(scanId)).toBeUndefined();
+
+      const outcome = await retryImageLookup(scanId, "result-1");
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) return;
+      expect(outcome.mode).toBe("snapshot");
+      expect(outcome.result.status).toBe("MATCH_FOUND");
+      expect(outcome.savedFilePath).toContain("example.com");
+
+      // The snapshot file was refreshed in place.
+      const savedRaw = await readFile(path.join(SANDBOX, "data", "results", "example.com.json"), "utf8");
+      const saved = JSON.parse(savedRaw) as { snapshot: { results: ImageScanResult[] } };
+      expect(saved.snapshot.results[0].status).toBe("MATCH_FOUND");
+      expect(saved.snapshot.results[0].reverseSearchResults?.[0]?.sourceUrl).toBe("https://stock.test/photos/1");
+    });
+
+    it("rejects rows that exist in neither memory nor the snapshot", async () => {
+      const scanId = "retry-snapshot-2";
+      const entry = createScanEntry(scanId, "https://example.com/");
+      entry.progress.state = "COMPLETED";
+      entry.results.push(makeDraft());
+      await saveScanSnapshot({ progress: { ...entry.progress }, results: entry.results });
+
+      evictLiveEntry();
+
+      const outcome = await retryImageLookup(scanId, "no-such-row");
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) expect(outcome.error).toContain("saved result file");
+    });
+
+    it("explains when neither a live scan nor a saved file exists", async () => {
+      evictLiveEntry();
+
+      const outcome = await retryImageLookup("retry-snapshot-3", "result-1");
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) {
+        expect(outcome.error).toContain("Scan not found");
+        expect(outcome.error).toContain("no saved result file");
+      }
+    });
   });
 });

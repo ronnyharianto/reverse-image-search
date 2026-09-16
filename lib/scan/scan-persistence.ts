@@ -90,6 +90,23 @@ export async function deleteScanSnapshot(targetUrl: string): Promise<boolean> {
 }
 
 /**
+ * Load the full saved snapshot belonging to a scan id, or null when no saved
+ * file matches (or the folder is missing/corrupt).
+ */
+export async function loadSavedSnapshotByScanId(scanId: string): Promise<ScanSnapshot | null> {
+  const filePath = await findSavedFilePathByScanId(scanId);
+  if (!filePath) return null;
+  try {
+    const payload = JSON.parse(await readFile(filePath, "utf8")) as {
+      snapshot?: ScanSnapshot;
+    };
+    return payload.snapshot ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Find the saved snapshot file whose progress.scanId matches. Saved files
  * are named after the target URL, not the scan id, so the folder must be
  * scanned for a match.
@@ -126,6 +143,33 @@ export async function findSavedSnapshotByScanId(scanId: string): Promise<string 
   if (!filePath) return null;
   try {
     return await readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Locate the saved snapshot file that belongs to a scan id and overwrite its
+ * full snapshot (progress + results) in place. Returns the file path on
+ * success, null when no saved file matches (live scans that were never
+ * auto-saved keep their retry results in memory only).
+ */
+export async function replaceSavedSnapshotByScanId(
+  scanId: string,
+  snapshot: ScanSnapshot,
+): Promise<string | null> {
+  const filePath = await findSavedFilePathByScanId(scanId);
+  if (!filePath) return null;
+
+  try {
+    const payload = JSON.parse(await readFile(filePath, "utf8")) as {
+      savedAt?: string;
+      snapshot?: ScanSnapshot;
+    };
+    payload.snapshot = snapshot;
+    payload.savedAt = new Date().toISOString();
+    await writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
+    return filePath;
   } catch {
     return null;
   }

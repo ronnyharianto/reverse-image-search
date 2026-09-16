@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import { categorizeSourceUrl } from "@/lib/match-categorization";
 import {
+  MATCH_CATEGORY_ORDER,
   MATCH_CATEGORY_STYLES,
   type MatchCategory,
 } from "@/lib/match-categorization";
@@ -26,7 +27,45 @@ export default function ImageDetail({
   retryDisabled?: boolean;
 }) {
   const [retrying, setRetrying] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | MatchCategory>(
+    "ALL",
+  );
   const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+  // Reset the filter when another result row is selected (setState during
+  // render — the React-recommended way to adjust state on prop changes).
+  const [prevResultId, setPrevResultId] = useState(result.id);
+  if (prevResultId !== result.id) {
+    setPrevResultId(result.id);
+    setCategoryFilter("ALL");
+  }
+
+  /** Matches of this row; memoized so the `?? []` fallback stays stable. */
+  const matches = useMemo(
+    () => result.reverseSearchResults ?? [],
+    [result],
+  );
+
+  // Matches per category — drives the filter chips and their counts.
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<MatchCategory, number>();
+    for (const match of matches) {
+      const category: MatchCategory =
+        match.category ?? categorizeSourceUrl(match.sourceUrl);
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    return counts;
+  }, [matches]);
+
+  // Matches visible after applying the category filter.
+  const visibleMatches = useMemo(() => {
+    if (categoryFilter === "ALL") return matches;
+    return matches.filter(
+      (match) =>
+        (match.category ?? categorizeSourceUrl(match.sourceUrl)) ===
+        categoryFilter,
+    );
+  }, [matches, categoryFilter]);
 
   // The body below the preview is its own scroll region; snap back to the
   // top (image + status) whenever another result row is selected.
@@ -155,10 +194,49 @@ export default function ImageDetail({
         <h3 className="mt-6 mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
           Reverse Search Results
         </h3>
-        {result.reverseSearchResults &&
-        result.reverseSearchResults.length > 0 ? (
+        {matches.length > 1 && categoryCounts.size > 1 ? (
+          <div
+            className="mb-3 flex flex-wrap items-center gap-1.5"
+            role="group"
+            aria-label="Filter matches by category"
+          >
+            <button
+              type="button"
+              onClick={() => setCategoryFilter("ALL")}
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                categoryFilter === "ALL"
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50"
+              }`}
+            >
+              All ({matches.length})
+            </button>
+            {MATCH_CATEGORY_ORDER.filter((category) =>
+              categoryCounts.has(category),
+            ).map((category) => {
+              const style = MATCH_CATEGORY_STYLES[category];
+              const active = categoryFilter === category;
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setCategoryFilter(category)}
+                  title={style.hint}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide transition ${
+                    active
+                      ? style.classes
+                      : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50"
+                  }`}
+                >
+                  {style.short} ({categoryCounts.get(category)})
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        {matches.length > 0 ? (
           <ol className="space-y-2">
-            {result.reverseSearchResults.map((match, index) => {
+            {visibleMatches.map((match, index) => {
               const category: MatchCategory =
                 match.category ?? categorizeSourceUrl(match.sourceUrl);
               const style = MATCH_CATEGORY_STYLES[category];

@@ -30,5 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: outcome.error }, { status: 409 });
   }
 
-  return NextResponse.json({ result: outcome.result, savedFilePath: outcome.savedFilePath });
+  // `mode` reports where the retry ran: "live" (in-memory scan) or
+  // "snapshot" (persisted data/results/ file, after a restart or prune).
+  return NextResponse.json({ result: outcome.result, savedFilePath: outcome.savedFilePath, mode: outcome.mode });
 }

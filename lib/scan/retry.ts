@@ -1,4 +1,4 @@
-import type { ImageScanResult, ProviderSearchOutcome } from "@/types/scanner";
+import type { ImageScanResult, ProviderSearchOutcome, ScanProgress } from "@/types/scanner";
 import type { ImageInput, ProviderResult, ReverseImageSearchProvider } from "@/lib/reverse-search/provider";
 import { MAX_IMAGE_BYTES } from "@/types/scanner";
 import { resolveAndValidateUrl } from "@/lib/validation/url";
@@ -8,21 +8,39 @@ import { fingerprintImage } from "@/lib/image/fingerprint";
 import { saveThumbnail } from "@/lib/image/thumbnails";
 import { getProviders, mergeProviderResults } from "@/lib/reverse-search";
 import { categorizeSourceUrl } from "@/lib/match-categorization";
-import { getScanEntry, publishEvent, type ScanEntry } from "@/lib/scan/scan-store";
-import { updateSavedSnapshotByScanId } from "@/lib/scan/scan-persistence";
+import { getScanEntry, publishEvent } from "@/lib/scan/scan-store";
+import {
+  loadSavedSnapshotByScanId,
+  replaceSavedSnapshotByScanId,
+  updateSavedSnapshotByScanId,
+} from "@/lib/scan/scan-persistence";
 
 /**
  * Retry of a failed reverse-search lookup for one image.
  *
  * The row's successful provider results are kept as-is (no extra API quota is
  * spent on them); only providers that previously failed are executed again.
- * The refreshed row is pushed to live subscribers and, when the scan was
- * auto-saved to data/results/, the JSON file is updated in place.
+ *
+ * Two execution modes:
+ *
+ * - "live":     the finished scan is still in memory. The refreshed row is
+ *               swapped into the live entry, pushed to SSE subscribers, and
+ *               the auto-saved JSON (if any) is updated in place.
+ * - "snapshot": the live entry is gone (server restart / prune). The retry
+ *               runs against the persisted snapshot in data/results/ and the
+ *               refreshed row is written back to the snapshot file, so saved
+ *               reports stay retryable across restarts.
  */
 
 export type RetryOutcome =
-  | { ok: true; result: ImageScanResult; savedFilePath: string | null }
+  | { ok: true; result: ImageScanResult; savedFilePath: string | null; mode: "live" | "snapshot" }
   | { ok: false; error: string };
+
+/** Minimal view of a scan the retry pipeline operates on (live or restored). */
+interface RetryStore {
+  progress: ScanProgress;
+  results: ImageScanResult[];
+}
 
 function cloneResult(result: ImageScanResult): ImageScanResult {
   return {
@@ -33,7 +51,10 @@ function cloneResult(result: ImageScanResult): ImageScanResult {
   };
 }
 
-/** One retry at a time per row, so double clicks cannot double-spend quota. */
+/**
+ * One retry at a time per row (and mode), so double clicks cannot
+ * double-spend provider quota.
+ */
 const inFlightRetries = new Set<string>();
 
 /**
@@ -110,7 +131,7 @@ export async function rerunFailedProviderLookups(
 }
 
 /** Re-download and validate the image so providers can search it again. */
-async function buildImageInput(entry: ScanEntry, result: ImageScanResult): Promise<ImageInput | { error: string }> {
+async function buildImageInput(store: RetryStore, result: ImageScanResult): Promise<ImageInput | { error: string }> {
   const resolved = resolveAndValidateUrl(result.imageUrl, result.pageUrl);
   if (!resolved.ok) return { error: `Image URL rejected: ${resolved.error}` };
 
@@ -127,8 +148,8 @@ async function buildImageInput(entry: ScanEntry, result: ImageScanResult): Promi
   }
 
   if (!result.previewUrl) {
-    const thumbFile = await saveThumbnail(entry.progress.scanId, fingerprint.sha256, download.data);
-    if (thumbFile) result.previewUrl = `/api/images/${entry.progress.scanId}/${thumbFile}`;
+    const thumbFile = await saveThumbnail(store.progress.scanId, fingerprint.sha256, download.data);
+    if (thumbFile) result.previewUrl = `/api/images/${store.progress.scanId}/${thumbFile}`;
   }
 
   return {
@@ -141,65 +162,107 @@ async function buildImageInput(entry: ScanEntry, result: ImageScanResult): Promi
   };
 }
 
+/** Providers for a scan, in run order, rebuilt from the persisted selection. */
+function providersForStore(progress: ScanProgress): ReverseImageSearchProvider[] {
+  const providerSet = getProviders(progress.providers);
+  return Object.values(providerSet).filter(
+    (provider): provider is ReverseImageSearchProvider => provider !== undefined,
+  );
+}
+
 /**
- * Retry the reverse search for one result row.
- *
- * Allowed only after the scan finished: while the scan is RUNNING the image
- * processor owns the rows and concurrent retries would race with it.
+ * Shared retry core for both modes. Mutates `store.results` with the
+ * refreshed row. Callers own the mode-specific commit (SSE push, snapshot
+ * file write) via the returned draft.
  */
-export async function retryImageLookup(scanId: string, resultId: string): Promise<RetryOutcome> {
-  const entry = getScanEntry(scanId);
-  if (!entry) {
-    return { ok: false, error: "Scan not found (it may have been pruned or the server restarted)." };
-  }
-  if (entry.progress.state === "RUNNING") {
-    return { ok: false, error: "The scan is still running. Retry once it finishes." };
-  }
+async function performRetry(
+  store: RetryStore,
+  resultId: string,
+  mode: "live" | "snapshot",
+  notFoundMessage: string,
+): Promise<{ ok: true; draft: ImageScanResult } | { ok: false; error: string }> {
+  const index = store.results.findIndex((r) => r.id === resultId);
+  if (index < 0) return { ok: false, error: notFoundMessage };
 
-  const index = entry.results.findIndex((r) => r.id === resultId);
-  if (index < 0) return { ok: false, error: "Result not found in this scan." };
-
-  const inFlightKey = `${scanId}:${resultId}`;
+  const inFlightKey = `${mode}:${store.progress.scanId}:${resultId}`;
   if (inFlightRetries.has(inFlightKey)) {
     return { ok: false, error: "A retry for this image is already in progress." };
   }
 
-  const result = entry.results[index];
+  const result = store.results[index];
   const draft = cloneResult(result);
   inFlightRetries.add(inFlightKey);
 
   try {
-    const imageInput = await buildImageInput(entry, result);
+    const imageInput = await buildImageInput(store, result);
     if ("error" in imageInput) return { ok: false, error: imageInput.error };
 
-    // Providers for this scan, in run order — rebuilt from the persisted
-    // selection so the retried search behaves like the original scan.
-    // An empty set (e.g. a provider was unconfigured since the scan) is a
-    // no-op: the row is committed unchanged and the snapshot is refreshed.
-    const providerSet = getProviders(entry.progress.providers);
-    const providers = Object.values(providerSet).filter(
-      (provider): provider is ReverseImageSearchProvider => provider !== undefined,
-    );
-
-    await rerunFailedProviderLookups(imageInput, draft, providers);
-
-    // Commit: swap the refreshed row into the live entry.
-    entry.results[index] = draft;
-    publishEvent(entry, { type: "result", result: cloneResult(draft) });
-
-    // Refresh the auto-saved JSON when this scan has one on disk.
-    let savedFilePath: string | null = null;
-    try {
-      savedFilePath = await updateSavedSnapshotByScanId(scanId, entry.results.map(cloneResult));
-    } catch (error) {
-      console.error("[retry] snapshot update failed:", error);
-    }
-
-    return { ok: true, result: cloneResult(draft), savedFilePath };
+    await rerunFailedProviderLookups(imageInput, draft, providersForStore(store.progress));
+    store.results[index] = draft;
+    return { ok: true, draft };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, error: `Retry failed: ${message.slice(0, 150)}` };
   } finally {
     inFlightRetries.delete(inFlightKey);
   }
+}
+
+/**
+ * Retry the reverse search for one result row.
+ *
+ * Allowed only after the scan finished: while the scan is RUNNING the image
+ * processor owns the rows and concurrent retries would race with it.
+ * Falls back to the persisted snapshot (data/results/) when the live entry
+ * no longer exists, so saved reports stay retryable after a restart.
+ */
+export async function retryImageLookup(scanId: string, resultId: string): Promise<RetryOutcome> {
+  const entry = getScanEntry(scanId);
+  if (entry?.progress.state === "RUNNING") {
+    return { ok: false, error: "The scan is still running. Retry once it finishes." };
+  }
+
+  if (entry) {
+    const outcome = await performRetry(entry, resultId, "live", "Result not found in this scan.");
+    if (outcome.ok) {
+      publishEvent(entry, { type: "result", result: cloneResult(outcome.draft) });
+
+      // Refresh the auto-saved JSON when this scan has one on disk.
+      let savedFilePath: string | null = null;
+      try {
+        savedFilePath = await updateSavedSnapshotByScanId(scanId, entry.results.map(cloneResult));
+      } catch (error) {
+        console.error("[retry] snapshot update failed:", error);
+      }
+      return { ok: true, result: cloneResult(outcome.draft), savedFilePath, mode: "live" };
+    }
+    // The live entry exists but could not serve this retry (e.g. the result
+    // id only exists in the persisted snapshot). Fall through to the
+    // snapshot before giving up.
+    if (!outcome.ok && outcome.error !== "Result not found in this scan.") {
+      return outcome;
+    }
+  }
+
+  // Snapshot fallback: no live entry (or the row only exists on disk).
+  const snapshot = await loadSavedSnapshotByScanId(scanId);
+  if (!snapshot) {
+    return {
+      ok: false,
+      error: entry
+        ? "Result not found in this scan or its saved result file."
+        : "Scan not found (it may have been pruned or the server restarted), and no saved result file exists for it.",
+    };
+  }
+
+  const restored: RetryStore = { progress: snapshot.progress, results: snapshot.results ?? [] };
+  const outcome = await performRetry(restored, resultId, "snapshot", "Result not found in the saved result file.");
+  if (!outcome.ok) return outcome;
+
+  // Commit: write the refreshed snapshot back to data/results/.
+  const savedFilePath = await replaceSavedSnapshotByScanId(scanId, {
+    progress: restored.progress,
+    results: restored.results,
+  });
+  return { ok: true, result: cloneResult(outcome.draft), savedFilePath, mode: "snapshot" };
 }

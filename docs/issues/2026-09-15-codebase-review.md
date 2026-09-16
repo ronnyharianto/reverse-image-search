@@ -109,7 +109,15 @@ the warning panel's own buttons are not covered by `disabled={submitting}`).
 
 ## 6. `startPollingFallback` can poll a finished scan forever
 
-**Severity: Low** · `app/scan/[id]/page.tsx` (SSE effect)
+**Severity: Low** · `app/scan/[id]/page.tsx` (SSE effect) · **Status: FIXED**
+(2026-09-16 — the polling fallback now stops immediately on a 404 from
+`GET /api/scan/<id>` (live scan gone after restart/prune) instead of looping
+forever, and the saved-snapshot fallback reports "scan no longer available and
+no saved result found" instead of hanging on "Connecting to scan stream…".
+Context: opening a report whose live scan no longer exists made the SSE stream
+404 → `onerror` started the poller → the poller ignored the 404 (`if
+(!response.ok) return`) and re-fetched every 2 s indefinitely, spamming the
+server log.)
 
 The polling fallback (used when SSE fails) has no stop condition on scan
 state: it keeps hitting `GET /api/scan/<id>` every 2 s even after the snapshot

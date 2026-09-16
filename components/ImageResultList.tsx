@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
-import { MATCH_CATEGORY_STYLES, summarizeMatchCategories } from "@/lib/match-categorization";
+import {
+  MATCH_CATEGORY_ORDER,
+  MATCH_CATEGORY_STYLES,
+  summarizeMatchCategories,
+  type MatchCategory,
+} from "@/lib/match-categorization";
 import { hasFailedProviderLookup, STATUS_LABELS, type ImageScanResult, type ImageStatus } from "@/types/scanner";
 
 /** Canonical status display order for the filter dropdown. */
@@ -85,18 +90,41 @@ export default function ImageResultList({
   retryDisabled?: boolean;
 }) {
   const [statusFilter, setStatusFilter] = useState<ImageStatus | "ALL">("ALL");
+  const [categoryFilter, setCategoryFilter] = useState<MatchCategory | "ALL">("ALL");
 
-  // Statuses present in the results, with row counts — drives the dropdown.
+  // Precompute each row's match categories once (rows can have several).
+  const categoriesByRow = useMemo(
+    () => new Map(results.map((r) => [r.id, summarizeMatchCategories(r.reverseSearchResults ?? [])])),
+    [results],
+  );
+
+  // Faceted counts: each dropdown's numbers reflect the other filter's
+  // current selection, so no combination can dead-end into misleading counts.
   const statusCounts = useMemo(() => {
     const counts = new Map<ImageStatus, number>();
     for (const result of results) {
+      if (categoryFilter !== "ALL" && !categoriesByRow.get(result.id)?.includes(categoryFilter)) continue;
       counts.set(result.status, (counts.get(result.status) ?? 0) + 1);
     }
     return counts;
-  }, [results]);
+  }, [results, categoryFilter, categoriesByRow]);
 
-  const visible =
-    statusFilter === "ALL" ? results : results.filter((r) => r.status === statusFilter);
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<MatchCategory, number>();
+    for (const result of results) {
+      if (statusFilter !== "ALL" && result.status !== statusFilter) continue;
+      for (const category of categoriesByRow.get(result.id) ?? []) {
+        counts.set(category, (counts.get(category) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [results, statusFilter, categoriesByRow]);
+
+  const visible = results.filter((result) => {
+    if (statusFilter !== "ALL" && result.status !== statusFilter) return false;
+    if (categoryFilter === "ALL") return true;
+    return categoriesByRow.get(result.id)?.includes(categoryFilter) ?? false;
+  });
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white shadow-sm">
@@ -104,28 +132,45 @@ export default function ImageResultList({
         <h2 className="text-lg font-semibold text-neutral-900">
           Scan Results <span className="text-sm font-normal text-neutral-500">({results.length})</span>
         </h2>
-        <label className="flex items-center gap-2 text-sm text-neutral-600">
-          Status
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as ImageStatus | "ALL")}
-            className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-          >
-            <option value="ALL">All ({results.length})</option>
-            {STATUS_ORDER.filter((status) => statusCounts.has(status)).map((status) => (
-              <option key={status} value={status}>
-                {STATUS_LABELS[status]} ({statusCounts.get(status)})
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            Status
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as ImageStatus | "ALL")}
+              className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="ALL">All ({results.length})</option>
+              {STATUS_ORDER.filter((status) => statusCounts.has(status)).map((status) => (
+                <option key={status} value={status}>
+                  {STATUS_LABELS[status]} ({statusCounts.get(status)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            Match category
+            <select
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value as MatchCategory | "ALL")}
+              className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="ALL">All ({results.length})</option>
+              {MATCH_CATEGORY_ORDER.filter((category) => categoryCounts.has(category)).map((category) => (
+                <option key={category} value={category} title={MATCH_CATEGORY_STYLES[category].hint}>
+                  {MATCH_CATEGORY_STYLES[category].label} ({categoryCounts.get(category)})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </header>
 
       {visible.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-neutral-500">
           {results.length === 0
             ? "Waiting for the first images to be processed…"
-            : "No images with this status."}
+            : "No images match the selected filters."}
         </p>
       ) : (
         <div className="overflow-x-auto">
